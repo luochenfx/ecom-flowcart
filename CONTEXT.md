@@ -51,3 +51,11 @@ _Avoid_: 进货单、供应商订单、代发单（语义窄；PurchaseOrder 是
 **OrderRMA（售后单）**:
 挂在 Order 下的售后/退款/纠纷统一子实体，`type = REFUND | DISPUTE`（国内退款入口 / 跨境纠纷入口）；自有状态轴与 workflow。订单履约轴的 REFUNDING/DISPUTED 只是由它派生的标记。
 _Avoid_: 退款单、纠纷单（分实体是平台视角；我方收敛为单一售后实体两种入口）
+
+**Domain Event（领域事件）**:
+业务事实已落库后广播的通知（`order.paid` / `listing.published` / `purchase.shipped`…），命名 `<domain>.<entity>.<past-tense>`；总线（RabbitMQ）只承载它——一切"驱动动作"的请求不经总线（走 workflow start/signal）。事件负载是轻量引用，数据真相在业务库，消费端回读。
+_Avoid_: 消息、MQ 消息（过载；Domain Event 特指已发生事实的广播，区别于命令/请求）
+
+**envelope（事件信封）**:
+总线消息的统一信封：`id/type/version/occurred_at/producer/entity_ref?/correlation_id?/trace_id?/payload`，transport-agnostic（总线可换、契约不破，ADR-0001）。version 语义化：additive 改次版本（新旧共存）、breaking 换 type（旧 type 冻结）——repo 即 registry。
+_Avoid_: 消息头、payload wrapper（envelope 是带版本/追踪语义的完整契约，非仅头部）

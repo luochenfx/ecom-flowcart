@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ecom-flowcart.dev/schemas/message.schema.json",
+  "title": "MessageContracts",
+  "description": "消息契约（v1 草案，part of #10）。repo 即 registry：本文件 = envelope + 首批 Domain/Lifecycle 事件 payload + DLQ 信封。运行时校验按 type 选择对应 payload def。",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "envelope": { "$ref": "#/$defs/Envelope" },
+    "dead_letter": { "$ref": "#/$defs/DeadLetterEnvelope" }
+  },
+  "$defs": {
+    "Envelope": {
+      "title": "envelope（transport-agnostic，对齐 ADR-0001）",
+      "type": "object",
+      "description": "总线消息统一信封。字段与 CloudEvents 对齐但自研轻量、不引 SDK。总线可换、契约不破。",
+      "required": ["id", "type", "version", "occurred_at", "producer", "payload"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid", "description": "消息唯一 id（幂等消费锚，消费端记已处理 id）" },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z]+(\\.[a-z][a-z0-9_]*)+$",
+          "description": "事件类型 = <domain>.<entity>.<past-tense>，全事件化（无命令态）。首批见本文件事件目录。breaking 变更 → 新 type（如 order.paid → order.paid.v2），旧 type 冻结"
+        },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+$", "description": "payload schema 语义化版本。additive → 次版本 bump（新旧共存）；breaking → 换 type（不经本字段破坏）" },
+        "occurred_at": { "type": "string", "format": "date-time", "description": "业务事实发生时间（事件产生时点）" },
+        "producer": { "type": "string", "description": "来源（workflow type / service 名）" },
+        "entity_ref": {
+          "$ref": "#/$defs/EntityRef",
+          "description": "本消息关联的业务实体（回读业务库用）。跨实体血缘靠逐跳 entity_ref，不强行共 correlation_id"
+        },
+        "correlation_id": { "type": "string", "description": "业务链根 id：一次端到端业务流的根实体 id（order.paid → purchase.created → purchase.shipped 同链）" },
+        "trace_id": { "type": "string", "description": "技术执行链（源头 workflow RunId 派生），日志聚合用" },
+        "payload": { "type": "object", "description": "事件负载（轻量：实体引用 + 变化摘要）。数据真相在业务库，消费端回读；负载不作 first write（对齐 money 铁律）" }
+      }
+    },
+    "DeadLetterEnvelope": {
+      "title": "DeadLetterEnvelope（DLQ 消息 = 重放素材）",
+      "type": "object",
+      "description": "投递/消费层失败（消费者崩溃/反序列化失败/校验不过）进 DLQ 的包裹。DLQ = 隔离舱 + 信号源，绝不自愈（对齐 ADR-0001）。业务失败不进 DLQ（workflow RetryPolicy/Saga 管）。",
+      "required": ["dead_letter"],
+      "properties": {
+        "dead_letter": {
+          "type": "object",
+          "required": ["original_message", "reason", "dead_at", "queue"],
+          "properties": {
+            "original_message": { "$ref": "#/$defs/Envelope", "description": "完整原 envelope（payload 不丢，可重放 = 解包原样重投）" },
+            "reason": {
+              "enum": ["CONSUMER_EXCEPTION", "DESERIALIZATION_FAILED", "SCHEMA_VALIDATION_FAILED", "DELIVERY_EXPIRED"],
+              "description": "失败类别。DESERIALIZATION/SCHEMA_VALIDATION = 永久毒消息（不重试直接 DLQ）；CONSUMER_EXCEPTION = delivery 重试耗尽后进 DLQ"
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "class": { "type": "string" },
+                "message": { "type": "string", "description": "结构化错误（非堆栈全文）" }
+              }
+            },
+            "retry_count": { "type": "integer", "minimum": 0, "description": "delivery-limit 耗尽前的自动重试次数" },
+            "dead_at": { "type": "string", "format": "date-time" },
+            "queue": { "type": "string", "description": "原队列名（定位来源 lane）" }
+          }
+        }
+      }
+    },
+    "EntityRef": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "description": "实体类型：listing/order/purchase_order/rma/spu/sku…" },
+        "id": { "type": "string", "description": "实体确定性 id（对 workflowId 业务键语义）" }
+      }
+    },
+    "OrderPaidPayload": {
+      "title": "order.paid",
+      "type": "object",
+      "description": "销售订单买家已付款（业务事实已落库后广播；消费端回读 Order 与快照）",
+      "required": ["order_id", "payment_amount", "currency", "paid_at"],
+      "properties": {
+        "order_id": { "type": "string" },
+        "payment_amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paid_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ListingPublishedPayload": {
+      "title": "listing.published",
+      "type": "object",
+      "description": "铺货成功（PUBLISHED 终态广播，回填 platform_item_id）",
+      "required": ["listing_id", "platform_item_id", "published_at"],
+      "properties": {
+        "listing_id": { "type": "string" },
+        "platform_item_id": { "type": "string", "description": "平台商品级 id（回填 execution_projection）" },
+        "published_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ListingAmbiguousPayload": {
+      "title": "listing.ambiguous",
+      "type": "object",
+      "description": "铺货超时歧义挂起（等 reconcile/人工，供看板 HITL）",
+      "required": ["listing_id", "reason"],
+      "properties": {
+        "listing_id": { "type": "string" },
+        "reason": { "type": "string", "description": "Ambiguous 结构化原因（platform_code + 描述）" }
+      }
+    },
+    "PurchaseShippedPayload": {
+      "title": "purchase.shipped",
+      "type": "object",
+      "description": "采购单供应商已发货（tracking 细节回读 PurchaseOrder，此处仅信号）",
+      "required": ["purchase_order_id", "shipped_at"],
+      "properties": {
+        "purchase_order_id": { "type": "string" },
+        "shipped_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "RmaClosedPayload": {
+      "title": "rma.closed",
+      "type": "object",
+      "description": "售后单完结（outcome 摘要，明细回读）",
+      "required": ["rma_id", "order_id", "outcome"],
+      "properties": {
+        "rma_id": { "type": "string" },
+        "order_id": { "type": "string" },
+        "outcome": { "enum": ["REFUNDED", "PARTIAL_REFUNDED", "CLOSED_NO_REFUND", "ESCALATED"] }
+      }
+    },
+    "SysWorkflowFailedPayload": {
+      "title": "sys.workflow.failed（Lifecycle 事件）",
+      "type": "object",
+      "description": "workflow failed 终态广播（告警/看板；与 Domain Event 同 envelope，type 前缀 sys.* 区分）",
+      "required": ["workflow_type", "workflow_id", "run_id", "error_type", "reason"],
+      "properties": {
+        "workflow_type": { "type": "string" },
+        "workflow_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "error_type": { "enum": ["RETRYABLE_EXHAUSTED", "NON_RETRYABLE", "AMBIGUOUS"] },
+        "reason": { "type": "string" }
+      }
+    },
+    "SysMessageDeadLetteredPayload": {
+      "title": "sys.message.dead_lettered（Lifecycle 事件）",
+      "type": "object",
+      "description": "DLQ 落库时的广播信号（告警/看板）。重放素材在 DLQ 队列原消息，本事件只做信号——重放素材与信号两层分离",
+      "required": ["queue", "original_message_id", "reason", "dead_at"],
+      "properties": {
+        "queue": { "type": "string" },
+        "original_message_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "dead_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
