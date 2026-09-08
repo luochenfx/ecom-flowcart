@@ -35,3 +35,19 @@ _Avoid_: 上架、发布商品（避免歧义：平台"上架"语义可能指 li
 **Reconcile（核实）**:
 在平台侧缺少"按外部引用查已存在商品"能力时，确认一次外部调用是否已生效（平台是否已创建 Listing）的手段；Adapter 可选实现。核实到已生效即达成去重目的。
 _Avoid_: 查重（语义不同：reconcile 确认"生效与否"，不假设平台提供查重端点）
+
+**Order（销售订单）**:
+顾客在某销售 channel 下达的交易，以 `(channel, platform_order_no)` 唯一；一 Order 对应一个订单 workflow execution。Order 实体只承载身份/关联/派生态，业务明细在它引用的建单快照里。
+_Avoid_: 交易、主订单（交易是平台词；Order 特指我方内部销售订单，与 PurchaseOrder 对称）
+
+**建单快照（order snapshot）**:
+Order 生成时固化的不可变业务事实（商品行/单价/数量/优惠/运费/平台原文）；此后商品改价、SKU 变更不影响历史订单。变更史不落数据行——不可变真相在 Temporal Event History，投影只反映最新态。
+_Avoid_: 订单版本（暗示 append-only 版本表，v1 不建——快照基线 + 事件史即可重建）
+
+**PurchaseOrder（采购单）**:
+我方在货源平台（1688）对某供应商下达的采购请求，以 `platform_purchase_no` 唯一；一销售 Order 可拆多张（跨供应商必须拆单）。自有状态轴与 workflow，经订单行关联回销售订单。
+_Avoid_: 进货单、供应商订单、代发单（语义窄；PurchaseOrder 是销售履约链的一等环节）
+
+**OrderRMA（售后单）**:
+挂在 Order 下的售后/退款/纠纷统一子实体，`type = REFUND | DISPUTE`（国内退款入口 / 跨境纠纷入口）；自有状态轴与 workflow。订单履约轴的 REFUNDING/DISPUTED 只是由它派生的标记。
+_Avoid_: 退款单、纠纷单（分实体是平台视角；我方收敛为单一售后实体两种入口）

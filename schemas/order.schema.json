@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ecom-flowcart.dev/schemas/order.schema.json",
+  "title": "OrderModel",
+  "description": "订单标准数据模型（v1 契约草案，part of #8）。快照原则落地：Order = 身份/关联/派生态；OrderSnapshot = 一等不可变业务事实；PurchaseOrder = 货源侧 1:N 采购；OrderRMA = 售后统一子实体（REFUND|DISPUTE）。",
+  "type": "object",
+  "required": ["schema_version", "orders", "order_lines", "order_snapshots", "purchase_orders", "rmas", "channel_sync_states"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "orders": { "type": "array", "items": { "$ref": "#/$defs/Order" } },
+    "order_lines": { "type": "array", "items": { "$ref": "#/$defs/OrderLine" } },
+    "order_snapshots": { "type": "array", "items": { "$ref": "#/$defs/OrderSnapshot" } },
+    "purchase_orders": { "type": "array", "items": { "$ref": "#/$defs/PurchaseOrder" } },
+    "rmas": { "type": "array", "items": { "$ref": "#/$defs/OrderRma" } },
+    "channel_sync_states": { "type": "array", "items": { "$ref": "#/$defs/ChannelSyncState" } }
+  },
+  "$defs": {
+    "Order": {
+      "title": "Order（销售订单）",
+      "type": "object",
+      "description": "顾客在销售 channel 下达的交易。身份 + 关联 + 派生态，不承载可变业务明细（明细在快照）。",
+      "required": ["order_id", "channel_id", "platform", "platform_order_no", "fulfillment_status", "snapshot_id", "timestamps", "provenance"],
+      "properties": {
+        "order_id": { "type": "string", "description": "确定性订单 id，对应 #11 workflowId 语义（order-{platform}-{orderNo} 的业务键）" },
+        "channel_id": { "type": "string", "description": "销售渠道账号（channel 维度，见 CONTEXT.md）" },
+        "platform": { "type": "string", "description": "销售平台（taobao/pdd/aliexpress）" },
+        "platform_order_no": { "type": "string", "description": "平台订单号。DB 层 (channel_id, platform_order_no) unique constraint（幂等第二级）" },
+        "platform_status": { "type": ["string", "null"], "description": "平台原始状态（原文旁路，不做逐平台翻译）" },
+        "platform_status_time": { "type": ["string", "null"], "format": "date-time", "description": "平台状态变更时间" },
+        "platform_raw": { "description": "平台订单原文（JSONB），审计/对账用", "$ref": "#/$defs/RawJson" },
+        "fulfillment_status": { "$ref": "#/$defs/FulfillmentStatus", "description": "内部 canonical 履约轴，由 workflow 从平台事件派生（投影层落库，非写入真相）" },
+        "snapshot_id": { "type": "string", "description": "引用的建单快照（业务事实不可变源）" },
+        "shipping_address": { "$ref": "#/$defs/ShippingAddress", "description": "收货地址（敏感附属字段，独立于快照的不可变承诺）" },
+        "buyer": { "type": ["string", "null"], "description": "脱敏买家标识（平台给出什么存什么）" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/LineRef" }, "description": "商品行引用（行级履约态在 OrderLine）" },
+        "rmas": { "type": "array", "items": { "$ref": "#/$defs/RmaRef" }, "description": "售后单引用（Order 1:N OrderRma）" },
+        "timestamps": { "$ref": "#/$defs/Timestamps" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "OrderSnapshot": {
+      "title": "OrderSnapshot（建单快照，一等不可变）",
+      "type": "object",
+      "description": "下单时固化的不可变业务事实：商品行 + 价格/优惠/运费 + 地址掩码 + 平台原文。此后商品改价/SKU 变更不影响历史订单。不可 UPDATE 业务事实字段。",
+      "required": ["snapshot_id", "order_id", "captured_at", "amounts", "line_snapshots", "provenance"],
+      "properties": {
+        "snapshot_id": { "type": "string" },
+        "order_id": { "type": "string" },
+        "captured_at": { "type": "string", "format": "date-time", "description": "快照捕获时间（建单时）" },
+        "amounts": { "$ref": "#/$defs/Amounts", "description": "金额聚合：商品总额/运费/优惠/实付。粒度以平台 API 能给的为准，缺口由 platform_raw 兜底" },
+        "line_snapshots": { "type": "array", "items": { "$ref": "#/$defs/LineSnapshot" }, "description": "行级商品事实快照（我方商品引用 + 规格 + 单价/数量/行小计）" },
+        "shipping_address_mask": { "$ref": "#/$defs/ShippingAddressMask", "description": "下单时平台给到的（可能脱敏）地址原样" },
+        "platform_raw": { "$ref": "#/$defs/RawJson", "description": "平台订单原文快照（含 snapshot_url/buyerView 等同源概念）" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "OrderLine": {
+      "title": "OrderLine（订单行，履约态载体）",
+      "type": "object",
+      "description": "订单行的履约身份：关联快照行 + 采购行引用。业务事实（价格/规格）不进本实体（在快照）。",
+      "required": ["order_line_id", "order_id", "platform_line_id", "snapshot_line_ref", "provenance"],
+      "properties": {
+        "order_line_id": { "type": "string" },
+        "order_id": { "type": "string" },
+        "platform_line_id": { "type": "string", "description": "平台行 ID。DB 层 (platform_order_no, platform_line_id) unique constraint" },
+        "snapshot_line_ref": { "type": "string", "description": "引用快照中的行快照（业务事实源）" },
+        "listing_ref": { "type": ["string", "null"], "description": "我方 Listing id（铺货产出关联，本订单买的是哪个 Listing 的货）" },
+        "purchase_line_refs": { "type": "array", "items": { "$ref": "#/$defs/PurchaseLineRef" }, "description": "关联的采购行（一销售行可拆多采购行：跨供应商拆单）" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder（采购单）",
+      "type": "object",
+      "description": "我方在货源平台（1688）对某供应商下达的采购请求。一销售 Order → 1:N PurchaseOrder（跨供应商必须拆单）。自有状态轴与 workflow。",
+      "required": ["purchase_order_id", "order_id", "supplier_ref", "platform_purchase_no", "purchase_status", "timestamps", "provenance"],
+      "properties": {
+        "purchase_order_id": { "type": "string", "description": "确定性采购 id（purchase-{...} workflowId 业务键）" },
+        "order_id": { "type": "string", "description": "来源销售订单" },
+        "supplier_ref": { "$ref": "#/$defs/SupplierRef", "description": "1688 供应商引用（一采购单仅限同供应商）" },
+        "platform_purchase_no": { "type": "string", "description": "1688 采购单号（flow=saleproxy 下单返回）" },
+        "purchase_status": { "$ref": "#/$defs/PurchaseStatus", "description": "采购 canonical 状态轴（独立于销售履约轴）" },
+        "platform_status": { "type": ["string", "null"], "description": "1688 侧原始状态旁路" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/PurchaseLine" } },
+        "amount": { "$ref": "#/$defs/Money", "description": "采购金额（1688 计价）" },
+        "tracking": { "type": "array", "items": { "$ref": "#/$defs/Tracking" }, "description": "供应商发货物流（logistics.trace 取回）" },
+        "timestamps": { "$ref": "#/$defs/Timestamps" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "OrderRma": {
+      "title": "OrderRMA（售后单）",
+      "type": "object",
+      "description": "统一售后子实体：国内退款（refund）与跨境纠纷（dispute）收敛为单一实体、两种入口。独立生命周期与 workflow。",
+      "required": ["rma_id", "order_id", "type", "rma_status", "platform_rma_id", "timestamps", "provenance"],
+      "properties": {
+        "rma_id": { "type": "string", "description": "确定性 rma id（rma-{platform}-{rmaId} workflowId 业务键）" },
+        "order_id": { "type": "string" },
+        "type": { "enum": ["REFUND", "DISPUTE"], "description": "REFUND = 国内退款入口；DISPUTE = 跨境纠纷入口（速卖通 issue，可冻资）" },
+        "platform_rma_id": { "type": "string", "description": "平台侧售后 ID（refund_id / issue_id）" },
+        "rma_status": { "$ref": "#/$defs/RmaStatus", "description": "canonical 售后状态轴" },
+        "platform_status": { "type": ["string", "null"], "description": "平台原始售后状态旁路" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/RmaLineRef" }, "description": "关联订单行（支持部分退款）" },
+        "amount": { "$ref": "#/$defs/Money", "description": "售后/退款金额（可部分）" },
+        "reason": { "type": ["string", "null"], "description": "买家/平台理由原文" },
+        "timestamps": { "$ref": "#/$defs/Timestamps" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "ChannelSyncState": {
+      "title": "ChannelSyncState（渠道同步游标）",
+      "type": "object",
+      "description": "每 channel 一行的增量拉取游标（DB 位置指针，无状态机逻辑，不进 Temporal）。webhook = 触发信号，拉取 = 数据真相。",
+      "required": ["channel_id", "cursor", "updated_at"],
+      "properties": {
+        "channel_id": { "type": "string" },
+        "cursor": { "description": "平台增量游标（modified 时间/页号等，平台相关，JSONB）" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ShippingAddress": {
+      "title": "收货地址（敏感附属字段）",
+      "type": "object",
+      "description": "履约可后补的操作数据，不在快照的不可变承诺内。明文 AES 加密存储。",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["MASKED", "DECRYPTED", "EMPTY"], "description": "MASKED = 平台给的是脱敏值；DECRYPTED = 已通过平台解密 API 取明文并加密落库；EMPTY = 平台未给" },
+        "encrypted_payload": { "type": ["string", "null"], "description": "明文地址 AES-256-GCM 加密负载（解密/回填时机：下采购单前，1688 直发顾客需要）" },
+        "masked": { "$ref": "#/$defs/ShippingAddressMask", "description": "当前可见的脱敏地址（可展示给运营看板）" },
+        "decrypt_source": { "type": ["string", "null"], "description": "解密 API 引用（如速卖通 trade.seller.order.decrypt / 淘宝 OAID 电子面单）" }
+      }
+    },
+    "LineSnapshot": {
+      "type": "object",
+      "description": "行级业务事实快照（不可变）",
+      "required": ["snapshot_line_id", "external_item_ref", "spec_text", "unit_price", "quantity", "line_amount"],
+      "properties": {
+        "snapshot_line_id": { "type": "string" },
+        "external_item_ref": { "$ref": "#/$defs/ExternalItemRef", "description": "平台侧商品/SKU 引用（taobao num_iid+sku_id / 速卖通 product id+sku / pdd）" },
+        "my_ref": { "type": ["string", "null"], "description": "我方引用：spu_id/sku_id 或 listing_id（若可回溯到自有商品）" },
+        "title_text": { "type": "string", "description": "下单时商品标题（原文快照）" },
+        "spec_text": { "type": "string", "description": "下单时规格描述（颜色/尺寸等，原文快照）" },
+        "unit_price": { "$ref": "#/$defs/Money" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "line_amount": { "$ref": "#/$defs/Money" },
+        "image_url": { "type": ["string", "null"] }
+      }
+    },
+    "PurchaseLine": {
+      "type": "object",
+      "required": ["purchase_line_id", "order_line_ref", "quantity", "unit_price"],
+      "properties": {
+        "purchase_line_id": { "type": "string" },
+        "order_line_ref": { "type": "string", "description": "回指销售订单行（履约关联锚点）" },
+        "source_sku_ref": { "type": "string", "description": "1688 货源 SKU（skuMap skuId）" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "unit_price": { "$ref": "#/$defs/Money" }
+      }
+    },
+    "Amounts": {
+      "type": "object",
+      "properties": {
+        "goods_amount": { "$ref": "#/$defs/Money", "description": "商品总额" },
+        "shipping_amount": { "$ref": "#/$defs/Money" },
+        "discount_amount": { "$ref": "#/$defs/Money", "description": "优惠总额（可为 0）" },
+        "payment_amount": { "$ref": "#/$defs/Money", "description": "买家实付" },
+        "currency": { "type": "string" }
+      }
+    },
+    "FulfillmentStatus": {
+      "type": "string",
+      "description": "内部 canonical 订单履约轴（v1 草案，随 #9/#10 消费时细化）。由 workflow 派生，不做逐平台全量映射。",
+      "enum": ["PENDING_PAYMENT", "AWAITING_PURCHASE", "PURCHASING", "PARTIALLY_SHIPPED", "SHIPPED", "COMPLETED", "CANCELLED", "REFUNDING", "DISPUTED", "UNKNOWN"]
+    },
+    "PurchaseStatus": {
+      "type": "string",
+      "enum": ["PENDING_PAYMENT", "PAID", "SHIPPED", "COMPLETED", "CANCELLED", "REFUNDING", "UNKNOWN"]
+    },
+    "RmaStatus": {
+      "type": "string",
+      "enum": ["OPEN", "WAITING_SELLER", "WAITING_BUYER", "PARTIAL_REFUNDED", "REFUNDED", "CLOSED", "REJECTED", "ESCALATED", "UNKNOWN"]
+    },
+    "Money": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "number", "description": "金额（小数按平台精度）" },
+        "currency": { "type": "string", "description": "ISO 4217（国内 CNY / 跨境按销售币种）" }
+      }
+    },
+    "ExternalItemRef": {
+      "type": "object",
+      "properties": {
+        "item_id": { "type": "string", "description": "平台商品 ID" },
+        "sku_id": { "type": ["string", "null"], "description": "平台 SKU ID" }
+      }
+    },
+    "SupplierRef": {
+      "type": "object",
+      "required": ["platform", "supplier_id", "name"],
+      "properties": {
+        "platform": { "const": "1688" },
+        "supplier_id": { "type": "string", "description": "1688 卖家 ID（fastCreateOrder 同供应商约束的依据）" },
+        "name": { "type": "string" }
+      }
+    },
+    "Tracking": {
+      "type": "object",
+      "properties": {
+        "company": { "type": "string", "description": "物流公司（logistics_company / service 名）" },
+        "tracking_no": { "type": "string", "description": "运单号（invoice_no / logistics no）" },
+        "status": { "type": ["string", "null"], "description": "物流状态原文" },
+        "url": { "type": ["string", "null"], "description": "平台物流查询链接" }
+      }
+    },
+    "ShippingAddressMask": {
+      "type": "object",
+      "description": "下单时平台给的地址（可能脱敏，原样保存）",
+      "properties": {
+        "country": { "type": ["string", "null"] },
+        "province": { "type": ["string", "null"] },
+        "city": { "type": ["string", "null"] },
+        "district": { "type": ["string", "null"] },
+        "detail": { "type": ["string", "null"] },
+        "postal_code": { "type": ["string", "null"] },
+        "receiver_name": { "type": ["string", "null"] },
+        "receiver_phone": { "type": ["string", "null"], "description": "可能脱敏（速卖通默认脱敏 / 淘宝 OAID）" }
+      }
+    },
+    "RawJson": {
+      "type": ["object", "null"],
+      "description": "平台原文 JSONB（审计/对账，含金额粒度缺口兜底）"
+    },
+    "LineRef": { "type": "object", "required": ["order_line_id"], "properties": { "order_line_id": { "type": "string" } } },
+    "RmaRef": { "type": "object", "required": ["rma_id"], "properties": { "rma_id": { "type": "string" } } },
+    "PurchaseLineRef": { "type": "object", "required": ["purchase_order_id", "purchase_line_id"], "properties": { "purchase_order_id": { "type": "string" }, "purchase_line_id": { "type": "string" } } },
+    "RmaLineRef": { "type": "object", "required": ["order_line_id"], "properties": { "order_line_id": { "type": "string" } } },
+    "Timestamps": {
+      "type": "object",
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Provenance": { "$ref": "product-catalog.schema.json#/$defs/Provenance" }
+  }
+}
