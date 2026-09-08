@@ -59,3 +59,15 @@ _Avoid_: 消息、MQ 消息（过载；Domain Event 特指已发生事实的广�
 **envelope（事件信封）**:
 总线消息的统一信封：`id/type/version/occurred_at/producer/entity_ref?/correlation_id?/trace_id?/payload`，transport-agnostic（总线可换、契约不破，ADR-0001）。version 语义化：additive 改次版本（新旧共存）、breaking 换 type（旧 type 冻结）——repo 即 registry。
 _Avoid_: 消息头、payload wrapper（envelope 是带版本/追踪语义的完整契约，非仅头部）
+
+**Adapter（平台适配器）**:
+每平台一个的插件化模块，实现 core 定义的能力接口，负责「标准模型 ↔ 平台模型」双向转换 + 平台认证/签名/限流。core 零平台依赖，Adapter 经 Java SPI 被发现。
+_Avoid_: 平台客户端、SDK 封装、channel handler（Adapter 是契约化的可插拔模块，含双向转换与错误/凭据契约）
+
+**Capability（能力）**:
+core 定义、Adapter 可选择性实现的能力接口族（Publish / OrderSync / Address / Shipment / Rma / OfferFetch / Purchase / Auth）；未实现的能力不影响 core 其它链路。core 的 workflow activity 依赖能力接口而非平台类。
+_Avoid_: 插件、handler、端点（Capability 特指接口级的可部分实现能力单位）
+
+**channel credential（渠道凭据）**:
+Channel 上挂的认证凭据（`type / encrypted_payload / status / expires_at`），AES 加密落库；接口传解密后的 CredentialView 不传明文 token。长期 token 人工刷新，OAuth refresh 走平台 Adapter 的 AuthCapability。
+_Avoid_: token、access key（凭据是带状态与加密的 Channel 域对象，token 只是其中一种负载）
