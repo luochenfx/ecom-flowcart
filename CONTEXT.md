@@ -79,3 +79,7 @@ _Avoid_: AI 服务、prompt 工具（Step 是契约化的字段级内容插件�
 **内容链（content chain）**:
 生成 Listing 内容的 workflow 域（每 Listing 一 execution：翻译回填 master + 改写稿/价格策略/媒体处理），产物 = Listing 内容就绪（provenance.step=AI|HUMAN）；与铺货 workflow（#11，只读就绪 Listing）分离——重铺 ≠ 重生成。单 Step 失败走降级（degraded_steps）而非阻断，硬依赖 Step 失败才 failed。
 _Avoid_: 清洗链、AI 管线（内容链是 Listing 内容生产的 Temporal workflow 域；"清洗"是 master 侧动作，归属由 Step 读写哪层字段决定）
+
+**core（契约核心）**:
+唯一共享层：标准模型 POJO + JSON Schema + 契约接口（Capability / AI Step / envelope type）+ 领域术语。**零 Spring/平台依赖**——一切模块只依赖 core，模块间不依赖实现只经 SPI。依赖规则 `core ← 一切`，三个编译期禁环（插件→宿主 / 业务→平台类 / 读侧→写侧实现）由 ArchUnit 自动拦。
+_Avoid_: 内核、platform、shared lib（core 是"契约 + 纯净模型"层，不是服务、不含运行时装配；Composition Root 在最外层）
