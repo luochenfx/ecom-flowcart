@@ -1,6 +1,6 @@
 # Temporal（自托管）作为工作流编排引擎
 
-工作流编排引擎选型定为 **Temporal，自托管部署**（参考部署：单机 8C16G + PostgreSQL 后端，独立 database、可与业务库同实例）。背景：一件代发电商自动化（设计先行、将开源），用户已定"代码定义 workflow 是骨架"（可视化拖拽后置）；业务链为 采集 → 清洗/AI Step → 铺货 → 订单回传，铺货是外部调用必失败、订单生命周期跨天等待外部异步事件。选 Temporal 的理由：code-first 与既定方向一致；跨步重试 / durable timer / signal / Saga 补偿 / Worker Versioning（在途执行跨版本升级）内建，成熟 Java SDK + Spring Boot 集成；每商品/每订单映射为一个 Workflow Execution（免自建状态表，Event History 天然审计轨迹）。8C16G 重校准后"自托管运维面不现实"的否决理由失效（原 research 以 2C2G 为前提）。
+工作流编排引擎选型定为 **Temporal，自托管部署**（参考部署：单机 8C16G + PostgreSQL 后端，独立 database、可与业务库同实例）。背景：一件代发电商自动化（设计先行、将开源），用户已定"代码定义 workflow 是骨架"（可视化拖拽后置）；业务链为 采集 → 清洗/AI Step → 铺货 → 订单回传，铺货是外部调用必失败、订单生命周期跨天等待外部异步事件。选 Temporal 的理由：code-first 与既定方向一致；跨步重试 / durable timer / signal / Saga 补偿 / Worker Versioning（在途执行跨版本升级）内建，成熟 Java SDK + Spring Boot 集成；每商品/每订单映射为一个 Workflow Execution（免自建状态表，Event History 天然审计轨迹）。资源基线校准（最低 4C8G、推荐 8C16G，2026-09-08 二次修正；原 research 以 2C2G 为前提）后"自托管运维面不现实"的否决理由失效。
 
 ## Considered Options
 

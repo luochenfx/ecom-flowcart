@@ -1,6 +1,6 @@
 # RabbitMQ（Quorum Queues）作为 v1 消息总线
 
-v1 消息总线选型定为 **RabbitMQ，队列形态默认 Quorum Queues**。背景：一件代发电商自动化系统（设计先行、将开源）需要一条解耦 采集 → 清洗/AI Step → 铺货 → 订单回传 的传输总线；约束为 Java 21 / Spring Boot 生态、自托管单机起步（最低 8C16G，2026-09-08 修正——非 FuSign 的 2C2G 遗产）、轻运维、绿地部署（无既有 Redis/Rabbit 遗产）、Kafka 因运维成本被否决。选 RabbitMQ 的理由：绿地部署下 "Redis Streams 零新增组件" 的前提不成立（无既有 Redis 可复用），Redis Streams 需自研 DLQ/janitor glue 并承担 AOF 丢失窗口；RabbitMQ 原生提供 DLX + delivery-count 重试（默认 20 次）+ Quorum 每写 fsync 落盘，Spring AMQP 4.x 是三者中最成熟的集成，且对开源自托管者认知度最高。Schema 治理三方皆无开箱能力，由 transport-agnostic envelope（type/version/payload）承担（细节归"消息 Schema 分层"票），总线可换、消息契约不破。
+v1 消息总线选型定为 **RabbitMQ，队列形态默认 Quorum Queues**。背景：一件代发电商自动化系统（设计先行、将开源）需要一条解耦 采集 → 清洗/AI Step → 铺货 → 订单回传 的传输总线；约束为 Java 21 / Spring Boot 生态、自托管单机起步（最低 4C8G、推荐 8C16G，2026-09-08 修正——原误带 FuSign 的 2C2G 遗产已剔除）、轻运维、绿地部署（无既有 Redis/Rabbit 遗产）、Kafka 因运维成本被否决。选 RabbitMQ 的理由：绿地部署下 "Redis Streams 零新增组件" 的前提不成立（无既有 Redis 可复用），Redis Streams 需自研 DLQ/janitor glue 并承担 AOF 丢失窗口；RabbitMQ 原生提供 DLX + delivery-count 重试（默认 20 次）+ Quorum 每写 fsync 落盘，Spring AMQP 4.x 是三者中最成熟的集成，且对开源自托管者认知度最高。Schema 治理三方皆无开箱能力，由 transport-agnostic envelope（type/version/payload）承担（细节归"消息 Schema 分层"票），总线可换、消息契约不破。
 
 ## Considered Options
 
