@@ -13,6 +13,17 @@
 
 Repo 由 `git remote -v` 推断；在 clone 目录内运行时 `gh` 会自动识别。
 
+## Issue 内容卫生：禁止本机绝对路径（硬性要求）
+
+Repo 目标开源、issues 与 comments 公开。**issue body 与 comment 一律不得出现本机本地绝对路径**（如 `F:\...`、`C:\Users\...`）：既泄露本机目录结构，对协作者也无意义。
+
+需要引用 repo 内文件时，以 **repo 根为锚的根相对路径** 书写（相对路径起点 = 本地 clone 根 = 仓库根），分隔符统一正斜杠 `/`：
+
+- ✅ `.workbuddy/research/landscape.md`、`docs/adr/0001-rabbitmq-quorum-as-v1-message-bus.md`
+- ❌ `F:/devlopment/projects/ecom-flowcart/.workbuddy/research/landscape.md`、`C:\Users\...`、`/home/...`
+
+发布 body / comment 前自查一遍，不得残留盘符形态（URL 中的 `https://` 除外）：`[A-Za-z]:[\\/]`。发现历史泄漏同样按此改写，不保留"仅供本机回溯"的绝对路径写法。
+
 ## 写操作幂等性（硬性要求）
 
 **问题**：当前 sandbox 会对同一条 Bash 命令执行两次（先沙箱、放行后再跑一次）。`gh` 写操作有外部副作用且非幂等，裸调会导致 issue / comment 双倍膨胀。
