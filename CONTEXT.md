@@ -71,3 +71,11 @@ _Avoid_: 插件、handler、端点（Capability 特指接口级的可部分实�
 **channel credential（渠道凭据）**:
 Channel 上挂的认证凭据（`type / encrypted_payload / status / expires_at`），AES 加密落库；接口传解密后的 CredentialView 不传明文 token。长期 token 人工刷新，OAuth refresh 走平台 Adapter 的 AuthCapability。
 _Avoid_: token、access key（凭据是带状态与加密的 Channel 域对象，token 只是其中一种负载）
+
+**AI Step（智能步骤）**:
+可插拔的无状态内容处理插件（标题改写/描述生成/价格策略/媒体处理），边界 = 标准模型字段级读写（声明 input/output/model_requirement），Java SPI 注册；产物写库标记 provenance.step。媒体处理与 LLM 在 model_requirement 上分型，不混在一个 provider 体系。
+_Avoid_: AI 服务、prompt 工具（Step 是契约化的字段级内容插件；"AI 服务"是 #12 明确否决的笼统形态）
+
+**内容链（content chain）**:
+生成 Listing 内容的 workflow 域（每 Listing 一 execution：翻译回填 master + 改写稿/价格策略/媒体处理），产物 = Listing 内容就绪（provenance.step=AI|HUMAN）；与铺货 workflow（#11，只读就绪 Listing）分离——重铺 ≠ 重生成。单 Step 失败走降级（degraded_steps）而非阻断，硬依赖 Step 失败才 failed。
+_Avoid_: 清洗链、AI 管线（内容链是 Listing 内容生产的 Temporal workflow 域；"清洗"是 master 侧动作，归属由 Step 读写哪层字段决定）
