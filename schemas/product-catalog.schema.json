@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ecom-flowcart.dev/schemas/product-catalog.schema.json",
+  "title": "ProductCatalog",
+  "description": "平台无关商品标准数据模型（v1 契约草案，part of #7）。SPU/SKU = 平台无关 master；Listing = 平台特化铺货内容（引用 SPU/SKU + 平台覆盖）；MediaAsset 支持 variant（含 LOCALIZED 预留）。",
+  "type": "object",
+  "required": ["schema_version", "spus", "skus", "listings", "media_assets"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "spus": { "type": "array", "items": { "$ref": "#/$defs/Spu" } },
+    "skus": { "type": "array", "items": { "$ref": "#/$defs/Sku" } },
+    "listings": { "type": "array", "items": { "$ref": "#/$defs/Listing" } },
+    "media_assets": { "type": "array", "items": { "$ref": "#/$defs/MediaAsset" } }
+  },
+  "$defs": {
+    "Spu": {
+      "title": "SPU（标准产品单元，master）",
+      "type": "object",
+      "required": ["spu_id", "source_ref", "titles", "images", "skus", "provenance"],
+      "properties": {
+        "spu_id": { "type": "string", "description": "Canonical id" },
+        "source_ref": { "$ref": "#/$defs/SourceRef", "description": "唯一货源引用（1688 offer）。v1 一 SPU ↔ 一 source offer" },
+        "titles": { "$ref": "#/$defs/LocalizedText", "description": "按 locale 的标题（至少含来源 locale）" },
+        "descriptions": { "$ref": "#/$defs/LocalizedText", "description": "按 locale 的描述（可选）" },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/MediaRef" }, "description": "主图/轮播/详情图引用" },
+        "skus": { "type": "array", "items": { "$ref": "#/$defs/SkuRef" } },
+        "source_categories": { "type": "array", "items": { "$ref": "#/$defs/CategoryRef" }, "description": "来源平台类目挂载（多 taxonomy）" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" }, "description": "来源属性快照（1688 采集原样，JSONB）" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "Sku": {
+      "title": "SKU（master 规格变体）",
+      "type": "object",
+      "required": ["sku_id", "spu_id", "specs", "cost_price", "provenance"],
+      "properties": {
+        "sku_id": { "type": "string" },
+        "spu_id": { "type": "string" },
+        "specs": { "type": "array", "items": { "$ref": "#/$defs/SpecValue" }, "description": "结构化规格（颜色/尺寸等，跨平台稳定语义）" },
+        "cost_price": { "$ref": "#/$defs/Money", "description": "成本价（我方进货价）" },
+        "barcode": { "type": ["string", "null"] },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/MediaRef" }, "description": "变体图（可选）" },
+        "source_sku_id": { "type": "string", "description": "1688 skuMap 原始 skuId" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "Listing": {
+      "title": "Listing（平台铺货实例）",
+      "type": "object",
+      "required": ["listing_id", "spu_id", "channel_id", "platform_category", "sku_set", "provenance"],
+      "properties": {
+        "listing_id": { "type": "string", "description": "确定性 listing id（对 #11 workflowId 语义）" },
+        "spu_id": { "type": "string" },
+        "channel_id": { "type": "string", "description": "目标渠道账号" },
+        "title_overrides": { "$ref": "#/$defs/LocalizedText", "description": "平台改写标题（AI/人工），按 locale 覆盖 canonical" },
+        "description_overrides": { "$ref": "#/$defs/LocalizedText" },
+        "locales": { "type": "array", "items": { "type": "string" }, "description": "提交用 locale 集（来自 canonical i18n，可覆盖）" },
+        "platform_category": { "$ref": "#/$defs/CategoryRef", "description": "目标平台叶子类目（铺货时选择/推导）" },
+        "platform_attributes": { "type": "array", "items": { "$ref": "#/$defs/PlatformAttribute" }, "description": "平台属性值（目标类目必填/可选属性）" },
+        "spec_mappings": { "type": "array", "items": { "$ref": "#/$defs/SpecMapping" }, "description": "canonical 规格名/值 → 平台属性 ID 的重映射" },
+        "sku_set": { "type": "array", "items": { "$ref": "#/$defs/ListingSku" }, "description": "引用 canonical SKU + 平台售价（可只铺部分规格）" },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/ListingImage" }, "description": "引用 SPU 资产或覆盖图，回填平台 media_id" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "MediaAsset": {
+      "title": "媒体资产",
+      "type": "object",
+      "required": ["media_id", "role", "processing_state", "provenance"],
+      "properties": {
+        "media_id": { "type": "string" },
+        "source_url": { "type": ["string", "null"], "description": "来源引用（1688 图等）" },
+        "storage_ref": { "type": ["string", "null"], "description": "我方下载/处理后存储位置" },
+        "role": { "enum": ["MAIN", "GALLERY", "DETAIL", "VIDEO"] },
+        "processing_state": { "enum": ["RAW", "DOWNLOADED", "PROCESSED", "UPLOADED", "FAILED"], "description": "下载/处理/上传由后台任务改，不在商品模型内" },
+        "variant_of": { "type": ["string", "null"], "description": "父资产 id——本资产是某资产的变体" },
+        "variant_purpose": { "enum": ["LOCALIZED", "GENERATED", "CROPPED"], "description": "LOCALIZED = AI 生成图内文本本地化变体（独立新图，非文本翻译）。v1 预留，生成任务在 AI 图像成本下降后引入" },
+        "variant_locale": { "type": ["string", "null"], "description": "该变体面向的目标语言（配合 variant_purpose）" },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "LocalizedText": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "minProperties": 1,
+      "description": "按 locale 的文本（Map<locale,string>）。canonical 至少含来源 locale；翻译回填 canonical，一处翻译多处复用"
+    },
+    "SourceRef": {
+      "type": "object",
+      "required": ["platform", "external_id", "url", "fetched_at"],
+      "properties": {
+        "platform": { "type": "string", "description": "来源平台标识（如 1688）" },
+        "external_id": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "fetched_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "MediaRef": {
+      "type": "object",
+      "required": ["media_id"],
+      "properties": {
+        "media_id": { "type": "string" },
+        "role": { "enum": ["MAIN", "GALLERY", "DETAIL", "VIDEO"] }
+      }
+    },
+    "ListingImage": {
+      "type": "object",
+      "required": ["media_id", "role"],
+      "properties": {
+        "media_id": { "type": "string" },
+        "role": { "enum": ["MAIN", "GALLERY", "DETAIL", "VIDEO"] },
+        "platform_media_id": { "type": ["string", "null"], "description": "铺货后回填的平台媒体 id" }
+      }
+    },
+    "SkuRef": {
+      "type": "object",
+      "required": ["sku_id"],
+      "properties": { "sku_id": { "type": "string" } }
+    },
+    "ListingSku": {
+      "type": "object",
+      "required": ["sku_id", "price"],
+      "properties": {
+        "sku_id": { "type": "string", "description": "引用 canonical SKU" },
+        "price": { "$ref": "#/$defs/Money", "description": "平台售价（成本 + 加价策略产物）" },
+        "enabled": { "type": "boolean", "default": true, "description": "false = 该规格不铺" }
+      }
+    },
+    "CategoryRef": {
+      "type": "object",
+      "required": ["taxonomy", "value"],
+      "properties": {
+        "taxonomy": { "type": "string", "description": "类目体系标识（1688 / taobao / pdd / aliexpress / …），多 taxonomy 挂载" },
+        "value": { "type": "string", "description": "叶子类目 id" },
+        "label": { "type": "string", "description": "展示名（缓存，非真源）" }
+      }
+    },
+    "Attribute": {
+      "type": "object",
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": ["string", "number", "boolean"] },
+        "unit": { "type": ["string", "null"] }
+      },
+      "description": "来源属性快照（键值，JSONB 容器）"
+    },
+    "PlatformAttribute": {
+      "type": "object",
+      "required": ["platform_attr_id", "key", "value"],
+      "properties": {
+        "platform_attr_id": { "type": "string", "description": "平台属性 ID（目标类目下）" },
+        "key": { "type": "string" },
+        "value": { "type": ["string", "number", "boolean"] }
+      },
+      "description": "平台属性值（铺货时填写的目标平台类目属性）"
+    },
+    "SpecValue": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string", "description": "规格维度 canonical 名（如 color/size）" },
+        "value": { "type": "string", "description": "规格值（canonical 语义，如 red / M）" }
+      }
+    },
+    "SpecMapping": {
+      "type": "object",
+      "required": ["canonical_name", "platform_attr_id"],
+      "properties": {
+        "canonical_name": { "type": "string" },
+        "platform_attr_id": { "type": "string", "description": "该平台对规格维度的属性 ID" }
+      },
+      "description": "canonical 规格维度 → 平台属性 ID 的重映射"
+    },
+    "Money": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "string", "description": "decimal string，避免浮点" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "required": ["created_by_step", "created_at", "updated_at"],
+      "properties": {
+        "created_by_step": { "enum": ["CAPTURE", "CLEAN", "AI", "LISTING", "RECONCILE", "HUMAN"] },
+        "updated_by_step": { "enum": ["CAPTURE", "CLEAN", "AI", "LISTING", "RECONCILE", "HUMAN"] },
+        "parent_ref": { "type": ["string", "null"], "description": "父对象引用（Listing→SPU/SKU、SPU→source offer），对象级血缘" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
