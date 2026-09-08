@@ -1,0 +1,63 @@
+# WorkBuddy workspace data（工作区数据，不纳入版本库）
+.workbuddy/
+.trae/
+.trae-cn/
+.cursor/
+.roo/
+.windsurf/
+.codebuddy/
+
+# OS 生成文件
+.DS_Store
+Thumbs.db
+
+# IDE 配置
+.idea/
+.vscode/
+*.code-workspace
+
+# ---- 环境变量 & 密钥文件（严禁入库） ----
+.env
+.env.local
+.env.*.local
+.env.*.bak
+*.pem
+*.crt
+*.cer
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+id_rsa
+id_ecdsa
+id_ed25519
+service-account.json
+firebase-adminsdk-*.json
+
+# ---- 本地数据库 / 数据文件 ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+data/
+/storage/
+
+# ---- 压缩包与临时文件 ----
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
+*.bak
+*.tmp
+*.temp
+
+# ---- 其他 ----
+!docs/agents/
+!docs/agents/**
+!docs/adr/
+!docs/adr/**
