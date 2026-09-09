@@ -87,7 +87,7 @@
 | `app` | 模块化单体（合一 role） | 4–6G |
 | `temporal-ui`（可选） | 编排运维看板 | 0.5G |
 
-- **备份**：postgres 双库 pg_dump 定时；RabbitMQ/Temporal 无状态可重建（历史在 temporal 库）。
+- **备份（口径纠偏，2026-09-09）**：postgres 双库 pg_dump 定时——业务库 `flowcart` **与** Temporal 编排库（`temporal` / `temporal_visibility`）**都须纳入备份**。状态归类：**Temporal 非无状态可重建**，其编排库是持久执行真相（workflow 历史/幂等锚点，见 ADR-0002）；仅 **RabbitMQ 可重放**（依赖"DB 为 record + 消费端幂等 + money 非 first-write"，ADR-0001）。备份/恢复语义（双库非原子、RPO 近似一致、restore 后 reconcile、点亮定时条件）见 [ops 备份/恢复 SOP](./ops/backup-restore.md)。
 - **Temporal 引导（一次性容器，运行期峰值约 0.5G 后退出）**：postgres 首次初始化建 `temporal`/`temporal_visibility` 库（`docker/init/`）→ `temporal-setup`（admin-tools，sql-tool 建 schema）→ Server → `temporal-init`（admin-tools，注册 default namespace）→ app；升级 = 同步更换 `temporalio/server` 与 `temporalio/admin-tools` 两个 tag。
 - **拆分演进信号**：① 单 worker CPU 饱和 / API 延迟被 AI Step 长调用拖累 → 拆 `app-worker` 独立容器（同 artifact `--role=worker`）；② 多机 → 才引入服务发现/Gateway（届时再议）。
 

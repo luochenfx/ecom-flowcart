@@ -85,7 +85,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 - 本地开发默认凭据 `flowcart/flowcart`；生产覆盖见 `.env.example`（复制为 `.env` 后改，`.env` 不入库）。
 - 首次 `docker compose up -d` 会自动执行两个一次性引导容器（建 Temporal schema + 注册 default namespace，幂等）；重置环境：`docker compose down -v && docker compose up -d`。
 - 无 Docker 环境可跳过 compose——`mvn clean test` 不依赖任何基础设施。
-- 完整部署拓扑 / 资源预算 / 备份职责见 [docs/architecture.md](docs/architecture.md) §5。
+- 完整部署拓扑 / 资源预算见 [docs/architecture.md](docs/architecture.md) §5；备份/恢复语义与脚本见 [docs/ops/backup-restore.md](docs/ops/backup-restore.md)。
 
 ## 文档导航
 
@@ -95,6 +95,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 | [CONTEXT.md](CONTEXT.md) | 领域术语（Listing / SPU / Order / Adapter / AI Step / core…） |
 | [docs/adr/](docs/adr/) | 决策记录 ADR-0001 ~ 0009 |
 | [docs/specs/](docs/specs/) | 领域规范 Specs-0001 ~ 0006 |
+| [docs/ops/backup-restore.md](docs/ops/backup-restore.md) | 备份/恢复 SOP：状态归类 + 双库 pg_dump 语义 + 恢复演练（配套 `docker/backup-postgres.sh` / `restore-postgres.sh`） |
 | [schemas/](schemas/) | 机器可读契约（product-catalog / order / message） |
 | [AGENTS.md](AGENTS.md) | Agent 协作约定（issue tracker / labels / domain docs） |
 | [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1) | 进度 wayfinder：Decisions so far + 遗留 fog |
