@@ -10,7 +10,10 @@
 #   两个一次性引导容器运行期峰值约 0.5G 后退出；profile ui / admin 各 +0.5G（可选，默认不启）。
 #
 # 凭据为本地开发默认值；生产部署必须通过 .env 覆盖（仓库根 .env 已被 .gitignore 拦截，模板见 .env.example）。
-# 备份职责：postgres 双库（flowcart + temporal）pg_dump 定时；RabbitMQ / Temporal 无状态可重建（见 README）。
+# 备份职责：postgres 双库（flowcart + temporal + temporal_visibility）pg_dump 定时。
+# 状态归类（勿混淆）：仅 RabbitMQ 可重放（依赖"DB 为 record + 消费端幂等 + money 非 first-write"，见 ADR-0001）；
+# Temporal 编排库（temporal / temporal_visibility）为持久执行真相，须纳入 pg_dump，非无状态可重建。
+# 备份/恢复语义与何时点亮定时：见 docs/ops/backup-restore.md。
 # 环境重置：docker compose down -v && docker compose up -d（-v 连引导容器与卷一并重建，重新走 init + schema）。
 
 name: flowcart
