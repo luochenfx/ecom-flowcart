@@ -1,10 +1,17 @@
-# ecom-flowcart 单机参考部署（ADR-0009 §5 部署视图）
+# ecom-flowcart 单机参考部署（ADR-0009 §5 部署视图 / ADR-0002 部署形态修订）
 #
-# 拓扑：模块化单体 app + 三个基础设施容器（postgres / rabbitmq / temporal）+ 可选 temporal-ui。
-# 资源预算（16G 参考内）：postgres 4G / rabbitmq 1G / temporal 3G / app 6G / temporal-ui 0.5G（profile）
+# 拓扑：模块化单体 app + 三个基础设施容器（postgres / rabbitmq / temporal）+ 两个一次性引导容器 + 可选 UI/admin。
+# Temporal 采用官方推荐拆分（auto-setup 镜像官方已 deprecated，2026-09-09 起弃用）：
+#   temporal-setup（一次性）  = temporalio/admin-tools：sql-tool 建 PostgreSQL schema（库由 postgres init 脚本自建）
+#   temporal（常驻）          = temporalio/server：4 角色 Server
+#   temporal-init（一次性）   = temporalio/admin-tools：等 SERVING 后注册 default namespace
+# 启动链：postgres(healthy) → temporal-setup(completed) → temporal(started) → temporal-init(completed) → app。
+# 资源预算（16G 参考内，常驻）：postgres 4G / rabbitmq 1G / temporal 3G / app 6G = 14G；
+#   两个一次性引导容器运行期峰值约 0.5G 后退出；profile ui / admin 各 +0.5G（可选，默认不启）。
 #
 # 凭据为本地开发默认值；生产部署必须通过 .env 覆盖（仓库根 .env 已被 .gitignore 拦截，模板见 .env.example）。
 # 备份职责：postgres 双库（flowcart + temporal）pg_dump 定时；RabbitMQ / Temporal 无状态可重建（见 README）。
+# 环境重置：docker compose down -v && docker compose up -d（-v 连引导容器与卷一并重建，重新走 init + schema）。
 
 name: flowcart
 
@@ -13,8 +20,8 @@ services:
     image: postgres:16-alpine
     container_name: flowcart-postgres
     environment:
-      # 主库 = 业务库 flowcart（superuser 同名）。temporal / temporal_visibility 库由 auto-setup 自建
-      # （SKIP_DB_CREATE=false，superuser 具 CREATE DATABASE 权限）。
+      # 主库 = 业务库 flowcart（superuser 同名）。temporal / temporal_visibility 库由
+      # docker/init/01-temporal-databases.sql 在首次初始化时自建（挂在 /docker-entrypoint-initdb.d）。
       POSTGRES_USER: ${POSTGRES_USER:-flowcart}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowcart}
       POSTGRES_DB: flowcart
@@ -23,6 +30,7 @@ services:
       - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowcart} -d flowcart"]
       interval: 10s
@@ -57,35 +65,75 @@ services:
           cpus: "1.0"
           memory: 1g
 
-  temporal:
-    # Temporal Server 自托管（4 角色单容器 + auto-setup 自动建库/注册 default namespace）。
-    # 注：官方已标注 auto-setup 镜像 deprecated（推荐 server + admin-tools 组合），但本镜像仍持续发版、
-    # 与 ADR-0002 设计一致——迁移到官方推荐形态留待独立决策，不阻塞本骨架。
-    image: temporalio/auto-setup:1.29.7
-    container_name: flowcart-temporal
+  temporal-setup:
+    # 一次性引导 1/2：建 Temporal PostgreSQL schema（temporal / temporal_visibility 库已由 postgres init 自建）。
+    # admin-tools 镜像内置 temporal-sql-tool + /etc/temporal/schema（server 镜像不含，无法自引导）。
+    image: temporalio/admin-tools:1.29.7-tctl-1.18.4-cli-1.7.2
+    container_name: flowcart-temporal-setup
+    restart: "no"
+    entrypoint: ["/bin/sh", "/setup/temporal-db-init.sh"]
     environment:
-      DB: postgres12
-      DB_PORT: "5432"
-      DBNAME: temporal              # Temporal 主库（auto-setup 自建）
-      VISIBILITY_DBNAME: temporal_visibility
+      POSTGRES_SEEDS: postgres
       POSTGRES_USER: ${POSTGRES_USER:-flowcart}
       POSTGRES_PWD: ${POSTGRES_PASSWORD:-flowcart}
-      POSTGRES_SEEDS: postgres
-      # SKIP_DB_CREATE 默认 false：auto-setup 以 superuser 自建 temporal / temporal_visibility 库
-    ports:
-      - "7233:7233" # gRPC frontend
+    volumes:
+      - ./docker:/setup:ro
     depends_on:
       postgres:
         condition: service_healthy
     deploy:
       resources:
         limits:
+          cpus: "0.5"
+          memory: 512m
+
+  temporal:
+    # Temporal Server 自托管（4 角色单容器；temporalio/server 镜像，官方推荐形态）。
+    # tag 随官方版本线单独升级（不再被 auto-setup 镜像停更捆绑）；无内置健康检查，
+    # readiness 由 temporal-init 轮询 `operator cluster health` 兜底（对齐官方 compose）。
+    image: temporalio/server:1.29.7
+    container_name: flowcart-temporal
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-flowcart}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-flowcart}
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233" # gRPC frontend
+    depends_on:
+      temporal-setup:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
           cpus: "2.0"
           memory: 3g
 
+  temporal-init:
+    # 一次性引导 2/2：等 Server SERVING 后注册 default namespace（幂等；等价 auto-setup 的 setup_server 段）。
+    image: temporalio/admin-tools:1.29.7-tctl-1.18.4-cli-1.7.2
+    container_name: flowcart-temporal-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "/setup/temporal-ns-init.sh"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      DEFAULT_NAMESPACE: default
+    volumes:
+      - ./docker:/setup:ro
+    depends_on:
+      temporal:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+
   app:
     # 模块化单体（ADR-0009）：单容器合一 role；启动 role 经命令行 --role=api,worker,scheduler 预留
-    #（role 实际启停逻辑随 worker-runtime slice 落地，骨架仅 web 空壳）
+    #（role 实际启停逻辑随 worker-runtime slice 落地，骨架仅 web 空壳）。
+    # 依赖 temporal-init 完成（default namespace 已注册）后才启动，保证 worker 首连即用。
     build:
       context: .
       dockerfile: Dockerfile
@@ -98,8 +146,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      temporal:
-        condition: service_started
+      temporal-init:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -107,7 +155,7 @@ services:
           memory: 6g
 
   temporal-ui:
-    # 可选：编排运维看板（docker compose --profile ui up）
+    # 可选：编排运维看板（docker compose --profile ui up -d）
     image: temporalio/ui:2.39.0
     container_name: flowcart-temporal-ui
     profiles: ["ui"]
@@ -115,6 +163,23 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
     ports:
       - "8081:8080"
+    depends_on:
+      - temporal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+
+  temporal-admin-tools:
+    # 可选：运维 CLI 入口（与官方 dev compose 一致；默认不启动）。
+    # docker compose --profile admin up -d 后：
+    #   docker compose --profile admin exec temporal-admin-tools temporal operator namespace list
+    image: temporalio/admin-tools:1.29.7-tctl-1.18.4-cli-1.7.2
+    container_name: flowcart-temporal-admin
+    profiles: ["admin"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
     depends_on:
       - temporal
     deploy:

@@ -78,11 +78,12 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 | 服务 | 地址 | 说明 |
 |---|---|---|
 | app | http://localhost:8080 | 模块化单体（骨架为 web 空壳）；健康检查 `/actuator/health` |
-| postgres | localhost:5433 | `flowcart` 业务库 + `temporal`/`temporal_visibility` 库（auto-setup 自建） |
+| postgres | localhost:5433 | `flowcart` 业务库 + `temporal`/`temporal_visibility` 库（首次初始化自建，admin-tools 引导 schema） |
 | rabbitmq | localhost:5672 / UI :15672 | Quorum 领域事件总线（管理台默认 flowcart/flowcart） |
 | temporal | localhost:7233 | 编排引擎；可选看板 `docker compose --profile ui up -d` → http://localhost:8081 |
 
 - 本地开发默认凭据 `flowcart/flowcart`；生产覆盖见 `.env.example`（复制为 `.env` 后改，`.env` 不入库）。
+- 首次 `docker compose up -d` 会自动执行两个一次性引导容器（建 Temporal schema + 注册 default namespace，幂等）；重置环境：`docker compose down -v && docker compose up -d`。
 - 无 Docker 环境可跳过 compose——`mvn clean test` 不依赖任何基础设施。
 - 完整部署拓扑 / 资源预算 / 备份职责见 [docs/architecture.md](docs/architecture.md) §5。
 

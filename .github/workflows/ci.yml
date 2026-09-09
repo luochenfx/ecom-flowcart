@@ -33,6 +33,9 @@ jobs:
           # GHA 缓存：~/.m2/repository 按 pom 指纹缓存/恢复，依赖不重复下载
           cache: maven
 
+      - name: Validate bootstrap scripts syntax
+        run: sh -n docker/temporal-db-init.sh docker/temporal-ns-init.sh
+
       - name: Validate docker-compose syntax
         run: docker compose config --quiet
 

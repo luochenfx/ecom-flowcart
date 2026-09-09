@@ -47,3 +47,13 @@ execution_projection
 - 引入常驻 Temporal Server（frontend/history/matching/worker）+ 独立 database 的运维面与监控；Worker（运行 workflow/activity 代码的进程）由本应用承担。
 - Workflow 代码须遵守确定性约束（不得直接调用 `Date.now()`/随机数/网络——放 Activity）；部署升级用 Worker Versioning（Build ID pinned）避免旧执行被新代码错误重放。
 - 看板不依赖 Temporal Visibility（Basic 不够、Advanced 要 ES），统一走投影表。
+
+## 部署形态修订（2026-09-09）
+
+compose 中的 Temporal 不再使用官方已标注 **deprecated** 的 `temporalio/auto-setup` 镜像（原为 4 角色单容器 + 自动建库/注册 default namespace 的便捷形态），改为官方推荐的拆分：
+
+- `temporalio/server`（常驻）：运行 4 角色 Server；数据库连接环境变量与 auto-setup 阶段一致。
+- `temporalio/admin-tools`（一次性引导）：承担 auto-setup 原来自动做的事——`docker/temporal-db-init.sh` 用 `temporal-sql-tool` 建 PostgreSQL schema（temporal / temporal_visibility 库由 postgres 容器首次初始化建，`docker/init/`），`docker/temporal-ns-init.sh` 等 Server SERVING 后注册 default namespace。
+- 启动时序（docker-compose.yml）：`postgres(healthy) → temporal-setup(completed) → temporal(started) → temporal-init(completed) → app`。
+
+动机：auto-setup 镜像已停更（官方不再为其发新版本），继续使用会捆绑并阻塞 Temporal Server 升级；server / admin-tools 镜像随官方版本线持续发版，升级 = 同步更换两个 tag（当前锁版 1.29.7 / 1.29.7-tctl-1.18.4-cli-1.7.2，见 compose 注释）。

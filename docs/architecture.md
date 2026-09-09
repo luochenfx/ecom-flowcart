@@ -83,11 +83,12 @@
 |---|---|---|
 | `postgres` | 单实例两 database：`flowcart`（业务）+ `temporal`（编排历史） | 3–4G |
 | `rabbitmq` | Quorum Queues + 管理插件 | 0.5–1G |
-| `temporal` | 自托管 Server（4 角色单容器 + auto-setup，连 temporal 库） | 2–3G |
+| `temporal` | 自托管 Server 4 角色（连 temporal 库；auto-setup 镜像 deprecated，2026-09-09 起改 server + admin-tools 引导） | 2–3G |
 | `app` | 模块化单体（合一 role） | 4–6G |
 | `temporal-ui`（可选） | 编排运维看板 | 0.5G |
 
 - **备份**：postgres 双库 pg_dump 定时；RabbitMQ/Temporal 无状态可重建（历史在 temporal 库）。
+- **Temporal 引导（一次性容器，运行期峰值约 0.5G 后退出）**：postgres 首次初始化建 `temporal`/`temporal_visibility` 库（`docker/init/`）→ `temporal-setup`（admin-tools，sql-tool 建 schema）→ Server → `temporal-init`（admin-tools，注册 default namespace）→ app；升级 = 同步更换 `temporalio/server` 与 `temporalio/admin-tools` 两个 tag。
 - **拆分演进信号**：① 单 worker CPU 饱和 / API 延迟被 AI Step 长调用拖累 → 拆 `app-worker` 独立容器（同 artifact `--role=worker`）；② 多机 → 才引入服务发现/Gateway（届时再议）。
 
 ## 6. 契约资产索引
