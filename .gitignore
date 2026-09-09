@@ -45,6 +45,10 @@ firebase-adminsdk-*.json
 data/
 /storage/
 
+# ---- 数据库备份产物（docker/backup-postgres.sh 默认落在 docker/backups/） ----
+*.dump
+docker/backups/
+
 # ---- 压缩包与临时文件 ----
 *.tar
 *.tar.gz
