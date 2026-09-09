@@ -82,12 +82,18 @@
     </testResources>
     <plugins>
       <!-- 契约测试基建（校验器/共享 mapper/fixture 模式）打 test-jar：
-           后续 Adapter 模块 fixture 门槛以 test-jar 依赖复用（core 零平台依赖不被破坏） -->
+           后续 Adapter / 业务模块 fixture 门槛以 test-jar 依赖复用（core 零平台依赖不被破坏）。
+           注意：test-jar goal 默认绑定 package 阶段——消费模块在 `mvn clean test`（CI 命令，
+           不到 package）下会解析失败（reactor 内 test-jar 未附加）。此处提前绑定到
+           process-test-classes（test 编译完成后、surefire 前），使 `mvn clean test` 冷启动
+           reactor 内即可解析，保持 CI 验收命令不变。 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <executions>
           <execution>
+            <id>contract-test-jar</id>
+            <phase>process-test-classes</phase>
             <goals>
               <goal>test-jar</goal>
             </goals>

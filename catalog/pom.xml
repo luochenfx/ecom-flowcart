@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   catalog —— 商品 master（ADR-0004：#7）。职责：采集（OfferFetch，经 core Capability 接口）→
-  SPU/SKU/MediaAsset 落库；canonical i18n 回填。骨架阶段无业务源码，业务由 ticket #19 落地。
-  依赖方向：仅 core-contracts（禁环②：不直连平台 SDK，1688 offer 抓取必须经 core OfferFetchCapability）。
+  SPU/SKU/MediaAsset 落库；canonical i18n 回填。业务由 ticket #19 落地。
+
+  v1 存储形态（#19 决议）：CatalogStore 端口 + schema 校验 JSON 文档库（JsonFileCatalogStore）。
+  真库（Postgres/JPA）表结构属设计期未决区，留待装配点单独收敛——同一 CatalogStore 端口换实现。
+
+  依赖方向：main 仅 core-contracts（禁环②：不直连平台 SDK，1688 offer 抓取必须经
+  core OfferFetchCapability）；jackson-databind 由 core-contracts 传递（文档库序列化显式声明）。
+  test：adapter-1688（本票首个 Adapter OfferFetch 子集，demo harness 经 Java SPI 装配）、
+  core-contracts test-jar（ContractSchemas/ContractAssertions 复用通道，Testing §1 契约门）、
+  WireMock（模拟 1688 网关）/ ArchUnit（禁环②）。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -25,6 +33,43 @@
       <groupId>io.autocommerce</groupId>
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
+    </dependency>
+
+    <!-- test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 契约测试基座（ContractSchemas / ContractAssertions，随 core-contracts test-jar 分发） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- 首个 1688 Adapter OfferFetch 子集（Java SPI 装配，demo harness 消费） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-1688</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

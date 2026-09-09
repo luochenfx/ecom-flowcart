@@ -38,6 +38,7 @@
   <modules>
     <module>core-contracts</module>
     <module>catalog</module>
+    <module>adapter-1688</module>
     <module>content</module>
     <module>publish</module>
     <module>order</module>
@@ -89,6 +90,16 @@
        此处只补 BOM 未覆盖的项。各模块使用时无需再写版本号。 -->
   <dependencyManagement>
     <dependencies>
+      <!-- WireMock 3.13.x 服务端基于 Jetty 11（官方自 4.x 起才把 Jetty 拆为独立扩展模块）；
+           Spring Boot BOM 管理 Jetty 12 → WireMock 运行时探测失败（FatalStartupException）。
+           此处把 Jetty 收口回 11.0.26（wiremock 3.13.2 pom 声明的版本），仅测试路径生效。 -->
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-bom</artifactId>
+        <version>11.0.26</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <!-- 架构禁环测试（ADR-0009 三禁环）：ArchUnit 一张测试类拦社区 PR。
            1.4.1 = Maven Central 该坐标已发布最高稳定版（1.5.0 不存在，勿引）。 -->
       <dependency>
@@ -120,12 +131,19 @@
   <build>
     <pluginManagement>
       <plugins>
-        <!-- JDK 定版编译器（release=${java.version}=21，与属性双保险，单一事实源在 properties） -->
+        <!-- JDK 定版编译器（release=${java.version}=21，与属性双保险，单一事实源在 properties）
+             fork=true：maven-compiler-plugin 3.15 进程内 javac 复用（reuseCreated）在 reactor
+             多模块编译时污染符号解析——后编译模块对前模块依赖包解析失败、javac 静默产出错误
+             桩类（MissingTypes）、testCompile 级联报"找不到类文件"（#19 adapter-1688 在本机
+             Windows 实测确定性复现；alwaysNew 策略无效，唯 fork 修复）。独立 javac 进程按模块
+             隔离，消除跨模块共享状态，保证任意 OS 上构建确定性；代价是每次编译多一次 JVM
+             启动（全量 clean test 约 +40-60s）。 -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <configuration>
             <release>${maven.compiler.release}</release>
+            <fork>true</fork>
           </configuration>
         </plugin>
         <!-- spring-boot-maven-plugin 版本由 parent 管理；仅 app 模块启用 repackage -->

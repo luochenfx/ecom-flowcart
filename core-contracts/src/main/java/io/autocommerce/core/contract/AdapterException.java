@@ -30,6 +30,13 @@ public class AdapterException extends RuntimeException {
         return new AdapterException(AdapterErrorKind.RETRYABLE, platformCode, message, null);
     }
 
+    /** RETRYABLE 且携带平台 Retry-After/节流窗口（specs/0005 §6，供退避参考）。 */
+    public static AdapterException retryable(String platformCode, String message,
+                                             Duration retryableAfter) {
+        return new AdapterException(AdapterErrorKind.RETRYABLE, platformCode, message,
+                retryableAfter);
+    }
+
     public static AdapterException nonRetryable(String platformCode, String message) {
         return new AdapterException(AdapterErrorKind.NON_RETRYABLE, platformCode, message, null);
     }
