@@ -59,7 +59,7 @@
       <artifactId>json-schema-validator</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- ArchUnit 禁环测试（1.5.0，版本收口于根 pom dependencyManagement） -->
+    <!-- ArchUnit 禁环测试（1.4.1，版本收口于根 pom dependencyManagement；1.5.0 不存在勿引） -->
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>

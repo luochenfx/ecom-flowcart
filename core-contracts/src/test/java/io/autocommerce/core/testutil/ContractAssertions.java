@@ -93,16 +93,17 @@ public final class ContractAssertions {
             return sb.append(']').toString();
         }
         if (node.isNumber()) {
-            if (node.isIntegralNumber()) {
-                return Long.toString(node.longValue());
-            }
-            return Double.toString(node.doubleValue());
-        }
-        if (node.isNull()) {
-            return "null";
+            // schema number 无 scale 语义：统一按数值规范化（BigDecimal 去尾零），
+            // 148.0 ≡ 148.00 ≡ 148、浮点 2.0 与整数 2 亦判等（DoubleNode/DecimalNode 同值同形）
+            return node.decimalValue().stripTrailingZeros().toPlainString();
         }
         if (node.isTextual()) {
-            return node.asText();
+            // JSON 引号转义形态：字符串 "123" 与数值 123、字符串 "true" 与布尔 true 不再可混淆，
+            // 保证"无字段丢失"门对类型漂移敏感（AC-2 契约保证不因文本裸拼而失效）
+            return node.toString();
+        }
+        if (node.isBoolean()) {
+            return Boolean.toString(node.booleanValue());
         }
         return node.asText();
     }

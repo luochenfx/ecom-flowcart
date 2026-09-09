@@ -1,5 +1,7 @@
 package io.autocommerce.core.contract;
 
+import java.time.Duration;
+
 /**
  * 平台错误统一契约（ADR-0007 / specs/0005 §6）。
  * 所有能力接口只抛本异常、不裸抛平台 SDK 异常；非 AdapterException 的异常 = bug 而非平台错误，
@@ -14,10 +16,10 @@ public class AdapterException extends RuntimeException {
 
     private final AdapterErrorKind kind;
     private final String platformCode;
-    private final java.time.Duration retryableAfter;
+    private final Duration retryableAfter;
 
     public AdapterException(AdapterErrorKind kind, String platformCode, String message,
-                            java.time.Duration retryableAfter) {
+                            Duration retryableAfter) {
         super(message);
         this.kind = kind;
         this.platformCode = platformCode;
@@ -44,7 +46,7 @@ public class AdapterException extends RuntimeException {
         return platformCode;
     }
 
-    public java.time.Duration retryableAfter() {
+    public Duration retryableAfter() {
         return retryableAfter;
     }
 }
