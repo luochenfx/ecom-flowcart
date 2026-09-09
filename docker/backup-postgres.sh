@@ -8,7 +8,7 @@
 #
 # 用法：
 #   docker/backup-postgres.sh                # 三库各产一份 timestamped .dump
-#   docker/backup-postgres.sh --dry-run      # 只校验连通性/命令路径，不产出（骨架期验证入口）
+#   docker/backup-postgres.sh --dry-run      # 校验连通性 + 库存在性（门禁）/命令路径，不产出（骨架期验证入口）
 #
 # 可覆盖环境变量（可在 .env 提供，脚本读取）：
 #   POSTGRES_USER / POSTGRES_PASSWORD         # 默认 flowcart / flowcart
@@ -62,18 +62,34 @@ else
   fi
 fi
 
-# ---- dry-run：连通性校验即止 ----
+# ---- 库可达性探测：真正连上目标库执行一条 SQL ----
+# 注意：不要用 pg_isready 代替 —— 实测 pg_isready -U u -d <不存在的库> 仍返回 0
+#（它只证明服务端在 accept 连接，不校验库是否存在）。用它会让 dry-run 对"库根本没建出来"
+# 也报 ok（假阳性），而那正是 init 脚本失效时最需要被发现的故障。
+db_probe() { # db_probe "<db>"
+  if [ "$USE_DOCKER" = "1" ]; then
+    docker exec flowcart-postgres psql -U "$PGUSER" -d "$1" -Atc 'SELECT 1' >/dev/null 2>&1
+  else
+    PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$1" -Atc 'SELECT 1' >/dev/null 2>&1
+  fi
+}
+
+# ---- dry-run：连通性 + 库存在性校验即止（任一库不可用则非零退出，作门禁） ----
 if [ "$DRY_RUN" = "1" ]; then
-  echo "[backup] dry-run：校验连接与数据库可达性（不产出 dump）"
+  echo "[backup] dry-run：校验连接与数据库存在性（不产出 dump）"
+  FAILED=0
   for db in $DB_LIST; do
-    if [ "$USE_DOCKER" = "1" ]; then
-      docker exec flowcart-postgres pg_isready -U "$PGUSER" -d "$db" >/dev/null \
-        && echo "[backup] ok: $db 可达" || echo "[backup] warn: $db 不可达（可能尚未初始化，骨架期属预期）"
+    if db_probe "$db"; then
+      echo "[backup] ok: $db 可连接（库存在）"
     else
-      PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" -c '\q' >/dev/null 2>&1 \
-        && echo "[backup] ok: $db 可达" || echo "[backup] warn: $db 不可达（可能尚未初始化，骨架期属预期）"
+      echo "[backup] fail: $db 不可达或不存在（检查 postgres 是否起来、init 是否建库）" >&2
+      FAILED=1
     fi
   done
+  if [ "$FAILED" = "1" ]; then
+    echo "[backup] dry-run 失败：存在不可用的目标库，备份不可信。" >&2
+    exit 1
+  fi
   echo "[backup] dry-run 完成。目标: $BACKUP_DIR"
   exit 0
 fi
