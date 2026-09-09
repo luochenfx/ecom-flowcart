@@ -1,6 +1,9 @@
 # ecom-flowcart CI 编译流水线（ticket #18）
 #
-# 触发：push（main 与实现期 type/** 分支）+ 所有 PR。
+# 触发：push（main 与实现期 type/** 分支）+ 所有 PR；
+# paths-ignore 黑名单排除纯文档变更（docs/**、任意层级 .md、LICENSE、.gitignore），
+# 避免设计期文档 churn / README Roadmap 同步触发无意义全量构建。
+# 注意：.github/workflows/** 不在黑名单 → workflow 自身变更必触发，可自验语法。
 # 内容：JDK 定版（21，与根 pom maven.compiler.release 双处一致）+ `mvn clean test`（GHA 依赖缓存）。
 # 门槛：ArchUnit 禁环测试随 core-contracts slice 纳入后，本流水线即自动拦截三禁环违规（ADR-0009）。
 name: CI
@@ -9,8 +12,17 @@ on:
   push:
     branches:
       - main
-      - "type/**"
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
