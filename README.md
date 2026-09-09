@@ -4,7 +4,7 @@
 
 覆盖国内（1688 → 淘宝 / 拼多多）与跨境（1688 → 速卖通）两条链路：采集货源商品 → AI 内容生产 → 平台铺货 → 订单回传 1688 采购 → 物流追踪 → 看板 HITL。
 
-> **当前状态：设计期已收官（2026-09-09）**。全部开放决策已收敛为 v1 设计包（9 篇 ADR + 6 篇 Specs + 3 份 JSON Schema 契约 + 架构总览）；实现期按 build slices 推进（见 [Roadmap](#roadmap)）。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
+> **当前状态：实现期开局（2026-09-09）**。设计期已收官（9 ADR + 6 Specs + 3 JSON Schema + 架构总览）；工程基建基座（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)）与 core-contracts 契约层（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)）已合入 main，frontier 推进至 catalog（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)）。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
 
 ---
 
@@ -119,9 +119,9 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 > 随进展逐步完善；每张实现期 ticket 关闭后同步更新本表与 map #1。
 
 - [x] **设计期收官**（2026-09-09）：9 ADR + 6 Specs + 3 JSON Schema + 架构总览 + CONTEXT 术语
-- [ ] **实现期 build slices**（按序开票，一次一张）：
-  - [ ] **工程基建基座**（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)）：多模块 Maven 骨架 + `docker-compose.yml` + CI 编译流水线 + 包名/JDK 定版——`mvn clean test` 空测试报告即绿
-  - [ ] `core-contracts`（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)）：标准模型 POJO + 契约接口 + JSON Schema 配套测试
+- **实现期 build slices**（按序开票，一次一张，frontier → [#19](https://github.com/luochenfx/ecom-flowcart/issues/19)）：
+  - [x] **工程基建基座**（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)，已合入 [PR #25](https://github.com/luochenfx/ecom-flowcart/pull/25)）：多模块 Maven 骨架 + `docker-compose.yml` + CI 编译流水线 + 包名/JDK 定版——`mvn clean test` 空测试报告即绿
+  - [x] `core-contracts`（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)，已合入 [PR #30](https://github.com/luochenfx/ecom-flowcart/pull/30)）：标准模型 POJO + 契约接口 + JSON Schema 配套测试——19 tests 绿
   - [ ] `catalog`（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)）：1688 OfferFetch 采集 → SPU/SKU/MediaAsset 落库
   - [ ] `content`（[#20](https://github.com/luochenfx/ecom-flowcart/issues/20)）：内容链 + 首批 AI Step（翻译回填 / 改写 / 价格）
   - [ ] `publish`（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）：铺货 workflow（含 reconcile seam）
