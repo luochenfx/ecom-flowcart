@@ -96,14 +96,14 @@ flowchart LR
 
 - [x] **设计期收官**（2026-09-09）：9 ADR + 6 Specs + 3 JSON Schema + 架构总览 + CONTEXT 术语
 - [ ] **实现期 build slices**（按序开票，一次一张）：
-  - [ ] `core-contracts` Maven 模块（标准模型 POJO + 契约接口 + JSON Schema 配套测试）
-  - [ ] docker-compose 骨架（postgres / rabbitmq / temporal / app 空壳跑通）
-  - [ ] `catalog`：1688 OfferFetch 采集 → SPU/SKU/MediaAsset 落库
-  - [ ] `content` 内容链 + 首批 AI Step（翻译回填 / 改写 / 价格）
-  - [ ] `publish` 铺货 workflow（含 reconcile seam）
-  - [ ] `order`：同步（轮询 + webhook 信号）→ 采购单 → 物流
-  - [ ] 首个平台 Adapter（1688 优先实测）落地双向 fixture 门槛
-- [ ] 开源发布准备（README 完善 / 示例数据 / 贡献指南）
+  - [ ] **工程基建基座**（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)）：多模块 Maven 骨架 + `docker-compose.yml` + CI 编译流水线 + 包名/JDK 定版——`mvn clean test` 空测试报告即绿
+  - [ ] `core-contracts`（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)）：标准模型 POJO + 契约接口 + JSON Schema 配套测试
+  - [ ] `catalog`（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)）：1688 OfferFetch 采集 → SPU/SKU/MediaAsset 落库
+  - [ ] `content`（[#20](https://github.com/luochenfx/ecom-flowcart/issues/20)）：内容链 + 首批 AI Step（翻译回填 / 改写 / 价格）
+  - [ ] `publish`（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）：铺货 workflow（含 reconcile seam）
+  - [ ] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)）：同步（轮询 + webhook 信号）→ 采购单 → 物流
+  - [ ] 首个平台 Adapter（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，1688 优先实测）落地双向 fixture 门槛
+- [ ] 开源发布准备（[#24](https://github.com/luochenfx/ecom-flowcart/issues/24)：README 完善 / 示例数据 / 贡献指南）
 
 ## License
 
