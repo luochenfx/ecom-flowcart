@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  app —— 聚合装配形态（可执行 artifact，ADR-0009：1 个 Spring Boot artifact，role 可切）。
+
+  依赖全部内部模块（模块化单体的进程内装配），打包为可执行 fat jar（spring-boot-maven-plugin
+  repackage）——docker-compose 的 app 服务与本仓库 Dockerfile 的构建产物即本模块。
+  装配级 starter（web / actuator）属工程骨架：web = api role 的 REST 载体（健康检查 HTTP 端点），
+  actuator = 容器健康检查 / 运维探针。业务依赖（JPA/RabbitMQ/Temporal/各平台 SDK）由各 slice 自行引入。
+  Flyway 迁移脚本目录：src/main/resources/db/migration（版本化脚本随各 slice 追加）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>app</artifactId>
+  <name>app</name>
+  <description>聚合装配：模块化单体可执行 artifact（--role=api|worker|scheduler 可切）</description>
+
+  <dependencies>
+    <!-- 内部模块（聚合装配） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>content</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>publish</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>order</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>projection</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-host</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>worker-runtime</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <!-- 装配级 starter（工程骨架）：REST 载体 + 健康检查探针 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>io.autocommerce.app.FlowcartApplication</mainClass>
+        </configuration>
+        <!-- repackage 默认 execution（id=repackage，phase=package）由 spring-boot-maven-plugin 4.x 自带，无需重复声明 -->
+      </plugin>
+    </plugins>
+  </build>
+</project>

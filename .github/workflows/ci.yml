@@ -1,0 +1,50 @@
+# ecom-flowcart CI 编译流水线（ticket #18）
+#
+# 触发：push（main 与实现期 type/** 分支）+ 所有 PR。
+# 内容：JDK 定版（21，与根 pom maven.compiler.release 双处一致）+ `mvn clean test`（GHA 依赖缓存）。
+# 门槛：ArchUnit 禁环测试随 core-contracts slice 纳入后，本流水线即自动拦截三禁环违规（ADR-0009）。
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "type/**"
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test (JDK 21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          # GHA 缓存：~/.m2/repository 按 pom 指纹缓存/恢复，依赖不重复下载
+          cache: maven
+
+      - name: Validate docker-compose syntax
+        run: docker compose config --quiet
+
+      - name: Build & test (mvn clean test)
+        # -s 指向仓库内 Aliyun settings（central -> maven.aliyun.com），保证国内/海外 runner 下载确定性
+        run: mvn -B -ntp -s .mvn/settings-aliyun.xml clean test
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: "**/target/surefire-reports/**"
+          retention-days: 7
+          if-no-files-found: ignore

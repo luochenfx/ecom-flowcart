@@ -1,0 +1,128 @@
+# ecom-flowcart 单机参考部署（ADR-0009 §5 部署视图）
+#
+# 拓扑：模块化单体 app + 三个基础设施容器（postgres / rabbitmq / temporal）+ 可选 temporal-ui。
+# 资源预算（16G 参考内）：postgres 4G / rabbitmq 1G / temporal 3G / app 6G / temporal-ui 0.5G（profile）
+#
+# 凭据为本地开发默认值；生产部署必须通过 .env 覆盖（仓库根 .env 已被 .gitignore 拦截，模板见 .env.example）。
+# 备份职责：postgres 双库（flowcart + temporal）pg_dump 定时；RabbitMQ / Temporal 无状态可重建（见 README）。
+
+name: flowcart
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowcart-postgres
+    environment:
+      # 主库 = 业务库 flowcart（superuser 同名）。temporal / temporal_visibility 库由 auto-setup 自建
+      # （SKIP_DB_CREATE=false，superuser 具 CREATE DATABASE 权限）。
+      POSTGRES_USER: ${POSTGRES_USER:-flowcart}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowcart}
+      POSTGRES_DB: flowcart
+    ports:
+      # 宿主 5433，避免与本地既有 PostgreSQL（5432）冲突
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowcart} -d flowcart"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
+
+  rabbitmq:
+    # RabbitMQ 4.1（management 插件内置）；Quorum Queues 为默认队列类型可选特性（v1 总线，ADR-0001）
+    image: rabbitmq:4.1-management-alpine
+    container_name: flowcart-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-flowcart}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-flowcart}
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # 管理 UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+
+  temporal:
+    # Temporal Server 自托管（4 角色单容器 + auto-setup 自动建库/注册 default namespace）。
+    # 注：官方已标注 auto-setup 镜像 deprecated（推荐 server + admin-tools 组合），但本镜像仍持续发版、
+    # 与 ADR-0002 设计一致——迁移到官方推荐形态留待独立决策，不阻塞本骨架。
+    image: temporalio/auto-setup:1.29.7
+    container_name: flowcart-temporal
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      DBNAME: temporal              # Temporal 主库（auto-setup 自建）
+      VISIBILITY_DBNAME: temporal_visibility
+      POSTGRES_USER: ${POSTGRES_USER:-flowcart}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-flowcart}
+      POSTGRES_SEEDS: postgres
+      # SKIP_DB_CREATE 默认 false：auto-setup 以 superuser 自建 temporal / temporal_visibility 库
+    ports:
+      - "7233:7233" # gRPC frontend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3g
+
+  app:
+    # 模块化单体（ADR-0009）：单容器合一 role；启动 role 经命令行 --role=api,worker,scheduler 预留
+    #（role 实际启停逻辑随 worker-runtime slice 落地，骨架仅 web 空壳）
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flowcart/app:dev
+    container_name: flowcart-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 6g
+
+  temporal-ui:
+    # 可选：编排运维看板（docker compose --profile ui up）
+    image: temporalio/ui:2.39.0
+    container_name: flowcart-temporal-ui
+    profiles: ["ui"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "8081:8080"
+    depends_on:
+      - temporal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+
+volumes:
+  pg_data:
+  rabbitmq_data:

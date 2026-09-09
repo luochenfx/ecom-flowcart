@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  adapter-host —— SPI 装配（ADR-0007：#9 / ADR-0008：#12）。职责：加载各平台 Adapter（Capability
+  接口族，Java SPI 无中央注册表）+ AI Step + LLMProvider 实现。Composition Root 之一（位于最外层）。
+  骨架阶段无业务源码；平台 Adapter 实现为独立模块（#23 1688 Adapter），本模块只做装配。
+  依赖方向：core-contracts（起步；对具体 Adapter/Step 实现的依赖随 #23 落地追加）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>adapter-host</artifactId>
+  <name>adapter-host</name>
+  <description>平台 Adapter / AI Step / LLMProvider 的 SPI 装配（Composition Root）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  order —— 订单域（ADR-0005：#8）。职责：同步（拉取为真相、webhook 为唤醒信号）/ 建单快照
+  OrderSnapshot / 采购单 1:N / RMA / 发货回传；每单独立 workflow；下采购单前解密地址。
+  骨架阶段无业务源码，业务由 ticket #22 落地。依赖方向：仅 core-contracts。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>order</artifactId>
+  <name>order</name>
+  <description>订单域：同步 / OrderSnapshot / 采购单 1:N / RMA / 发货</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>

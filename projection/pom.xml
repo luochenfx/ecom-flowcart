@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  projection —— 读侧（ADR-0002：#13）。职责：execution_projection 等投影表承载看板/列表查询，
+  不含状态机逻辑；真相 = Temporal Event History + 薄投影（只查不算）。禁环③：不依赖写侧内部实现。
+  骨架阶段无业务源码。依赖方向：仅 core-contracts。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>projection</artifactId>
+  <name>projection</name>
+  <description>读侧投影：execution_projection 等投影表（只查不算）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>

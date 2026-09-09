@@ -64,6 +64,28 @@ flowchart LR
 - 国内 / 跨境共用同一套架构与标准模型，差异全部收在平台 Adapter。
 - AI 产物先落库（`provenance.step=AI`），人工在铺货前编辑覆盖（`HUMAN`）；重铺 ≠ 重生成。
 
+## 快速开始（本地开发）
+
+**前置**：JDK 21 + Maven 3.9+（可选 Docker / Docker Compose v2）。依赖下载走 Aliyun Public Repository——根 pom 已声明；CI 与 Docker 构建经 `.mvn/settings-aliyun.xml` 把 Maven Central 镜像到同一地址（`-s .mvn/settings-aliyun.xml`）。
+
+```bash
+git clone https://github.com/luochenfx/ecom-flowcart.git
+cd ecom-flowcart
+mvn clean test        # 工程基座（ticket #18）：无业务代码时输出空测试报告即绿
+docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
+```
+
+| 服务 | 地址 | 说明 |
+|---|---|---|
+| app | http://localhost:8080 | 模块化单体（骨架为 web 空壳）；健康检查 `/actuator/health` |
+| postgres | localhost:5433 | `flowcart` 业务库 + `temporal`/`temporal_visibility` 库（auto-setup 自建） |
+| rabbitmq | localhost:5672 / UI :15672 | Quorum 领域事件总线（管理台默认 flowcart/flowcart） |
+| temporal | localhost:7233 | 编排引擎；可选看板 `docker compose --profile ui up -d` → http://localhost:8081 |
+
+- 本地开发默认凭据 `flowcart/flowcart`；生产覆盖见 `.env.example`（复制为 `.env` 后改，`.env` 不入库）。
+- 无 Docker 环境可跳过 compose——`mvn clean test` 不依赖任何基础设施。
+- 完整部署拓扑 / 资源预算 / 备份职责见 [docs/architecture.md](docs/architecture.md) §5。
+
 ## 文档导航
 
 | 文档 | 说明 |

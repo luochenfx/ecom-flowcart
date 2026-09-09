@@ -56,6 +56,16 @@ data/
 *.tmp
 *.temp
 
+# ---- Java / Maven 构建产物（ticket #18 工程基座） ----
+target/
+*.class
+*.jar
+dependency-reduced-pom.xml
+.mvn/timing.properties
+.mvn/extensions.xml
+hs_err_pid*.log
+replay_pid*.log
+
 # ---- 其他 ----
 !docs/agents/
 !docs/agents/**

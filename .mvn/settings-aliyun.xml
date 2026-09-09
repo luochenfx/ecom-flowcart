@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ecom-flowcart 统一 Maven settings（供 CI 与 Docker 构建使用）。
+
+  目标：把 Maven Central 镜像到 Aliyun Public Repository，保证无论网络环境，
+  依赖/插件下载都走仓库内约定的国内镜像（与根 pom 的 repositories 声明一致）。
+  用法：mvn -s .mvn/settings-aliyun.xml clean test
+  注意：仅 mirror 中央仓库（central），不镜像 pom 中已显式声明的 aliyun-public，
+  避免自镜像循环；snapshots 依赖本项目不使用（发行版均发布到 Central）。
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+  <mirrors>
+    <mirror>
+      <id>aliyun-mirror</id>
+      <name>Aliyun Public Repository Mirror</name>
+      <mirrorOf>central</mirrorOf>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+
+</settings>

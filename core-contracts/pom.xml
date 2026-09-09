@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  core-contracts —— 唯一共享层（ADR-0009：core ← 一切）。
+
+  职责（Spec #16 / architecture.md §6）：标准模型 POJO（对齐 schemas/*.json）、
+  契约接口族（Capability / AI Step / LLMProvider / envelope type / AdapterException / CredentialView）、
+  领域术语。零 Spring / 零平台依赖——本模块骨架阶段无源码，Java 包结构与契约类由 ticket #17
+  （core-contracts slice）落地，届时不改本 pom 的模块边界。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>core-contracts</artifactId>
+  <name>core-contracts</name>
+  <description>标准模型与契约接口（唯一共享层，零 Spring/平台依赖）</description>
+
+  <!-- 无依赖：一切模块依赖本模块，本模块不依赖任何内部模块 -->
+</project>
