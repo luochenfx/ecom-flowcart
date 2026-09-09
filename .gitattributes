@@ -1,0 +1,34 @@
+# EOL 归一策略：全仓文本统一 LF
+#
+# 背景：Windows 下 Git 安装默认 system core.autocrlf=true，会把 *sh 等文本在
+# checkout 时转成 CRLF；这些脚本被挂载进 Linux 容器（docker compose / Temporal
+# bootstrap）执行时因 CR 而报 "set: illegal option -"。
+#
+# 决策：* text=auto eol=lf —— 仓库与工作树文本一律 LF，跨 Windows/Linux/macOS
+# 收敛，杜绝脚本/CI 换行符冲突。（本仓无 .md/文档特殊 EOL 需求，统一 LF 最稳。）
+
+* text=auto eol=lf
+
+# 脚本类：即使被挂载进 Linux 容器也必须保持 LF（语法依赖）
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.dockerfile text eol=lf
+
+# 构建/配置类文本强制 LF（仓库内一致性）
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.xml       text eol=lf
+*.json      text eol=lf
+
+# 源码/文档
+*.java      text eol=lf
+*.kt        text eol=lf
+*.md        text eol=lf
+
+# 二进制（绝不做换行转换）
+*.jar       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.ico       binary

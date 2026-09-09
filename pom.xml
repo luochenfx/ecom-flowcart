@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ecom-flowcart 根 pom（parent / 聚合）。
+
+  工程定版（ticket #18 收口）：
+  - Java 包名：io.autocommerce（全仓一致）
+  - JDK：21（maven.compiler.release，与 .github/workflows/ci.yml 双处一致）
+  - Spring Boot：4.1.x（parent BOM 取最新稳定 4.1.1）
+  - 依赖仓库：Aliyun Public Repository（maven.aliyun.com/repository/public），CI/Docker 构建另经
+    .mvn/settings-aliyun.xml 将 central 镜像到同一地址
+  - 契约治理：schemas/ JSON + core-contracts Java + docs/ 三形态同仓同 commit（变更原子），不引 codegen
+
+  模块边界（ADR-0009）：core-contracts 为唯一共享层（core ← 一切）；
+  adapter-host / worker-runtime 是仅有的 Composition Root；app 为聚合装配形态（可执行 artifact）。
+  本骨架只锁版本、只声明模块依赖方向，不引入任何业务依赖（各 slice ticket 自行添加）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>io.autocommerce</groupId>
+  <artifactId>ecom-flowcart</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>ecom-flowcart</name>
+  <description>一件代发（dropshipping）电商自动化工作流 — 模块化单体（设计先行、将开源）</description>
+  <url>https://github.com/luochenfx/ecom-flowcart</url>
+
+  <modules>
+    <module>core-contracts</module>
+    <module>catalog</module>
+    <module>content</module>
+    <module>publish</module>
+    <module>order</module>
+    <module>projection</module>
+    <module>api</module>
+    <module>adapter-host</module>
+    <module>worker-runtime</module>
+    <module>app</module>
+  </modules>
+
+  <properties>
+    <!-- JDK 定版：与 CI（.github/workflows/ci.yml setup-java）双处一致 -->
+    <java.version>21</java.version>
+    <maven.compiler.release>${java.version}</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+  </properties>
+
+  <!-- Aliyun Public Repository：依赖解析优先走国内镜像（pom 内声明，clone 即用） -->
+  <repositories>
+    <repository>
+      <id>aliyun-public</id>
+      <name>Aliyun Public Repository</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>aliyun-public</id>
+      <name>Aliyun Public Repository</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </pluginRepository>
+  </pluginRepositories>
+
+  <!-- 版本管理起步：只锁测试/架构校验依赖版本，不引业务依赖。
+       JUnit 5 / Mockito / AssertJ / WireMock 相关由 spring-boot-dependencies BOM 管理（parent 继承），
+       此处只补 BOM 未覆盖的项。各模块使用时无需再写版本号。 -->
+  <dependencyManagement>
+    <dependencies>
+      <!-- 架构禁环测试（ADR-0009 三禁环）：ArchUnit 一张测试类拦社区 PR -->
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>1.5.0</version>
+        <scope>test</scope>
+      </dependency>
+      <!-- WireMock（Adapter fixture 门槛 / 平台 API 模拟，specs/0005）：取 3.x 最新稳定（4.0 仍 beta） -->
+      <dependency>
+        <groupId>org.wiremock</groupId>
+        <artifactId>wiremock</artifactId>
+        <version>3.13.2</version>
+        <scope>test</scope>
+      </dependency>
+      <!-- JSON Schema 契约校验器（schema 与 Java 双向 fixture，specs/0005） -->
+      <dependency>
+        <groupId>com.networknt</groupId>
+        <artifactId>json-schema-validator</artifactId>
+        <version>3.0.7</version>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- JDK 定版编译器（release=${java.version}=21，与属性双保险，单一事实源在 properties） -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+          </configuration>
+        </plugin>
+        <!-- spring-boot-maven-plugin 版本由 parent 管理；仅 app 模块启用 repackage -->
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  publish —— 铺货（ADR-0003：#11）。职责：每 Listing 一 listing-{productId}-{channelId}
+  确定性 WorkflowId workflow（幂等）+ 状态机（PUBLISHED/AMBIGUOUS/REJECTED/FAILED）+ reconcile seam
+  + 事件广播（listing.published / listing.ambiguous）。只读就绪 Listing。骨架阶段无业务源码，
+  业务由 ticket #21 落地。依赖方向：仅 core-contracts。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>publish</artifactId>
+  <name>publish</name>
+  <description>铺货：确定性 WorkflowId 幂等 + 状态机 + reconcile seam</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>
