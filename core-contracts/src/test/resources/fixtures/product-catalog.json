@@ -1,0 +1,142 @@
+{
+  "schema_version": "0.1.0",
+  "spus": [
+    {
+      "spu_id": "spu-1001",
+      "source_ref": {
+        "platform": "1688",
+        "external_id": "offer-6688990011",
+        "url": "https://detail.1688.com/offer/6688990011.html",
+        "fetched_at": "2026-09-09T08:30:00Z"
+      },
+      "titles": { "zh-CN": "便携蓝牙音箱 迷你无线低音炮 户外防水", "en": "Portable Bluetooth Speaker Mini Wireless Bass Outdoor Waterproof" },
+      "descriptions": { "zh-CN": "高保真低音，IPX5 防水，续航 12 小时。" },
+      "images": [
+        { "media_id": "media-2001", "role": "MAIN" },
+        { "media_id": "media-2002", "role": "GALLERY" }
+      ],
+      "skus": [
+        { "sku_id": "sku-3001" },
+        { "sku_id": "sku-3002" }
+      ],
+      "source_categories": [
+        { "taxonomy": "1688", "value": "cat-1601", "label": "数码/影音/音箱" }
+      ],
+      "attributes": [
+        { "key": "battery_capacity", "value": "1200mAh", "unit": "mAh" },
+        { "key": "waterproof_level", "value": 5, "unit": null },
+        { "key": "has_bluetooth", "value": true, "unit": null }
+      ],
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "updated_by_step": "CLEAN",
+        "parent_ref": "offer-6688990011",
+        "created_at": "2026-09-09T08:30:00Z",
+        "updated_at": "2026-09-09T08:35:00Z"
+      }
+    }
+  ],
+  "skus": [
+    {
+      "sku_id": "sku-3001",
+      "spu_id": "spu-1001",
+      "specs": [
+        { "name": "color", "value": "black" },
+        { "name": "size", "value": "M" }
+      ],
+      "cost_price": { "amount": "45.90", "currency": "CNY" },
+      "barcode": "6901234567890",
+      "images": [
+        { "media_id": "media-2003", "role": "DETAIL" }
+      ],
+      "source_sku_id": "1688-sku-3001",
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "created_at": "2026-09-09T08:30:00Z",
+        "updated_at": "2026-09-09T08:30:00Z"
+      }
+    },
+    {
+      "sku_id": "sku-3002",
+      "spu_id": "spu-1001",
+      "specs": [
+        { "name": "color", "value": "white" },
+        { "name": "size", "value": "M" }
+      ],
+      "cost_price": { "amount": "45.90", "currency": "CNY" },
+      "barcode": null,
+      "images": null,
+      "source_sku_id": null,
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "created_at": "2026-09-09T08:30:00Z",
+        "updated_at": "2026-09-09T08:30:00Z"
+      }
+    }
+  ],
+  "listings": [
+    {
+      "listing_id": "listing-4001",
+      "spu_id": "spu-1001",
+      "channel_id": "taobao-shop-a",
+      "title_overrides": { "zh-CN": "2026 新款便携蓝牙音箱 迷你重低音 户外防水 送礼" },
+      "description_overrides": { "zh-CN": "升级款低音振膜，支持 TWS 互联。" },
+      "locales": ["zh-CN", "en"],
+      "platform_category": { "taxonomy": "taobao", "value": "tb-cat-5001", "label": "影音电器/音箱/便携音箱" },
+      "platform_attributes": [
+        { "platform_attr_id": "tb-attr-color", "key": "颜色", "value": "黑色" },
+        { "platform_attr_id": "tb-attr-warranty", "key": "保修期", "value": 12 }
+      ],
+      "spec_mappings": [
+        { "canonical_name": "color", "platform_attr_id": "tb-attr-color" }
+      ],
+      "sku_set": [
+        { "sku_id": "sku-3001", "price": { "amount": "79.00", "currency": "CNY" }, "enabled": true },
+        { "sku_id": "sku-3002", "price": { "amount": "79.00", "currency": "CNY" }, "enabled": false }
+      ],
+      "images": [
+        { "media_id": "media-2001", "role": "MAIN", "platform_media_id": "tb-media-9001" }
+      ],
+      "provenance": {
+        "created_by_step": "LISTING",
+        "updated_by_step": "AI",
+        "parent_ref": "spu-1001",
+        "created_at": "2026-09-09T09:00:00Z",
+        "updated_at": "2026-09-09T09:10:00Z"
+      }
+    }
+  ],
+  "media_assets": [
+    {
+      "media_id": "media-2001",
+      "source_url": "https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000001.jpg",
+      "storage_ref": "s3://flowcart-media/media-2001.jpg",
+      "role": "MAIN",
+      "processing_state": "UPLOADED",
+      "variant_of": null,
+      "variant_purpose": null,
+      "variant_locale": null,
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "created_at": "2026-09-09T08:30:00Z",
+        "updated_at": "2026-09-09T09:05:00Z"
+      }
+    },
+    {
+      "media_id": "media-2002",
+      "source_url": "https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000002.jpg",
+      "storage_ref": null,
+      "role": "GALLERY",
+      "processing_state": "PROCESSED",
+      "variant_of": "media-2001",
+      "variant_purpose": "LOCALIZED",
+      "variant_locale": "en",
+      "provenance": {
+        "created_by_step": "AI",
+        "parent_ref": "media-2001",
+        "created_at": "2026-09-09T09:20:00Z",
+        "updated_at": "2026-09-09T09:20:00Z"
+      }
+    }
+  ]
+}

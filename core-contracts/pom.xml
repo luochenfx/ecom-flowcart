@@ -2,10 +2,21 @@
 <!--
   core-contracts —— 唯一共享层（ADR-0009：core ← 一切）。
 
-  职责（Spec #16 / architecture.md §6）：标准模型 POJO（对齐 schemas/*.json）、
-  契约接口族（Capability / AI Step / LLMProvider / envelope type / AdapterException / CredentialView）、
-  领域术语。零 Spring / 零平台依赖——本模块骨架阶段无源码，Java 包结构与契约类由 ticket #17
-  （core-contracts slice）落地，届时不改本 pom 的模块边界。
+  本票（#17 core-contracts slice）在此骨架落契约代码：
+  - 标准模型 POJO（对齐 schemas/ 三份 JSON Schema，@JsonNaming(SNAKE_CASE) 保证序列化即契约形态）
+  - 契约接口族：Capability（Publish/OrderSync/Address/Shipment/Rma/OfferFetch/Purchase/Auth）、
+    AI Step（AiStep/StepDescriptor/LLMProvider/MediaProcessor/ModelResolver）、
+    envelope type（message/EventTypes + payload）、AdapterException、CredentialView
+  - 零 Spring / 零平台依赖；main 仅引 jackson-databind（模型字段需表达 JSONB 自由值/逃生口，
+    非 Spring 非平台）。一切内部模块依赖本模块，本模块不依赖任何内部模块。
+
+  契约测试基座（Testing Decisions §1/§2，Spec #16）：
+  - schemas/ JSON 通过 <testResources> 外部目录复制进 test-classes/schemas（单一事实源仍在仓库根，
+    不入库副本；test-jar 打包后随 test-jar 分发，供后续 Adapter 双向 fixture 门槛复用 —— AC-4）
+  - 共享测试基建（ContractSchemas / ContractObjectMapper / ContractAssertions）落 src/test，
+    随 test-jar 供 catalog/content/publish/order/adapter 等模块复用
+  - ArchUnit 禁环测试基座（ArchitectureRulesTest）：core 零 Spring/平台依赖为真实断言；
+    三禁环规则骨架在此声明，随业务模块包结构就位后逐条激活
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -23,5 +34,66 @@
   <name>core-contracts</name>
   <description>标准模型与契约接口（唯一共享层，零 Spring/平台依赖）</description>
 
-  <!-- 无依赖：一切模块依赖本模块，本模块不依赖任何内部模块 -->
+  <dependencies>
+    <!-- Jackson 2（Boot BOM 管理版本）：@JsonNaming + JsonNode（自由值/逃生口/负载直通）。
+         非 Spring 非平台；契约三形态之一（Java）的序列化基线即 SNAKE_CASE。 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
+    <!-- test 基座：JUnit 5 / AssertJ 由 Boot BOM 管理版本 -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- JSON Schema 契约校验器（1.5.6，版本收口于根 pom dependencyManagement） -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- ArchUnit 禁环测试（1.5.0，版本收口于根 pom dependencyManagement） -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <testResources>
+      <!-- 模块自身测试资源 -->
+      <testResource>
+        <directory>src/test/resources</directory>
+      </testResource>
+      <!-- schemas/ 单一事实源（仓库根）→ 复制进 test-classes/schemas：
+           校验器从 classpath:/schemas 加载；test-jar 打包随之分发（AC-4 复用通道） -->
+      <testResource>
+        <directory>../schemas</directory>
+        <targetPath>schemas</targetPath>
+      </testResource>
+    </testResources>
+    <plugins>
+      <!-- 契约测试基建（校验器/共享 mapper/fixture 模式）打 test-jar：
+           后续 Adapter 模块 fixture 门槛以 test-jar 依赖复用（core 零平台依赖不被破坏） -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

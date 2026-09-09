@@ -89,11 +89,12 @@
        此处只补 BOM 未覆盖的项。各模块使用时无需再写版本号。 -->
   <dependencyManagement>
     <dependencies>
-      <!-- 架构禁环测试（ADR-0009 三禁环）：ArchUnit 一张测试类拦社区 PR -->
+      <!-- 架构禁环测试（ADR-0009 三禁环）：ArchUnit 一张测试类拦社区 PR。
+           1.4.1 = Maven Central 该坐标已发布最高稳定版（1.5.0 不存在，勿引）。 -->
       <dependency>
         <groupId>com.tngtech.archunit</groupId>
         <artifactId>archunit-junit5</artifactId>
-        <version>1.5.0</version>
+        <version>1.4.1</version>
         <scope>test</scope>
       </dependency>
       <!-- WireMock（Adapter fixture 门槛 / 平台 API 模拟，specs/0005）：取 3.x 最新稳定（4.0 仍 beta） -->
@@ -103,11 +104,14 @@
         <version>3.13.2</version>
         <scope>test</scope>
       </dependency>
-      <!-- JSON Schema 契约校验器（schema 与 Java 双向 fixture，specs/0005） -->
+      <!-- JSON Schema 契约校验器（schema 与 Java 双向 fixture，specs/0005）。
+           1.5.6 = Maven Central 该坐标最新稳定（无 2.x/3.x：3.x 已切 Jackson 3 / SchemaRegistry，
+           与本仓库 Jackson 2 / Boot BOM 冲突）。经典 JsonSchemaFactory / Set<ValidationMessage> API，
+           支持 Draft 2020-12。 -->
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
-        <version>3.0.7</version>
+        <version>1.5.6</version>
         <scope>test</scope>
       </dependency>
     </dependencies>

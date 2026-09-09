@@ -1,0 +1,43 @@
+{
+  "schema_version": "0.1.0",
+  "envelope": {
+    "id": "1f0c1f2e-8f7a-4b3c-9d2e-3a4b5c6d7e8f",
+    "type": "order.paid",
+    "version": "1.0",
+    "occurred_at": "2026-09-09T10:05:00Z",
+    "producer": "order-sync-worker",
+    "entity_ref": { "type": "order", "id": "order-taobao-202609090001" },
+    "correlation_id": "order-taobao-202609090001",
+    "trace_id": "trace-abc-123",
+    "payload": {
+      "order_id": "order-taobao-202609090001",
+      "payment_amount": 148.0,
+      "currency": "CNY",
+      "paid_at": "2026-09-09T10:05:00Z"
+    }
+  },
+  "dead_letter": {
+    "dead_letter": {
+      "original_message": {
+      "id": "a2b3c4d5-e6f7-4a8b-9c0d-1e2f3a4b5c6d",
+      "type": "listing.published",
+      "version": "1.0",
+      "occurred_at": "2026-09-09T12:00:00Z",
+      "producer": "publish-worker",
+      "entity_ref": { "type": "listing", "id": "listing-4001" },
+      "correlation_id": null,
+      "trace_id": null,
+      "payload": {
+        "listing_id": "listing-4001",
+        "platform_item_id": "tb-item-6688990011",
+        "published_at": "2026-09-09T12:00:00Z"
+      }
+    },
+    "reason": "SCHEMA_VALIDATION_FAILED",
+    "error": { "class": "io.autocommerce.core.validation.SchemaViolation", "message": "payload.currency 缺省" },
+    "retry_count": 0,
+    "dead_at": "2026-09-09T12:01:00Z",
+    "queue": "domain.order.paid"
+    }
+  }
+}

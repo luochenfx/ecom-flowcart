@@ -1,0 +1,182 @@
+{
+  "schema_version": "0.1.0",
+  "orders": [
+    {
+      "order_id": "order-taobao-202609090001",
+      "channel_id": "taobao-shop-a",
+      "platform": "taobao",
+      "platform_order_no": "TB202609090001",
+      "platform_status": "WAIT_SELLER_SEND_GOODS",
+      "platform_status_time": "2026-09-09T10:05:00Z",
+      "platform_raw": { "raw_extra": { "buyer_rate": true }, "tid": "TB202609090001" },
+      "fulfillment_status": "AWAITING_PURCHASE",
+      "snapshot_id": "snap-5001",
+      "shipping_address": {
+        "state": "MASKED",
+        "encrypted_payload": null,
+        "masked": {
+          "country": "中国",
+          "province": "广东省",
+          "city": "深圳市",
+          "district": "南山区",
+          "detail": "科技园***路 100 号",
+          "postal_code": "518000",
+          "receiver_name": "张*",
+          "receiver_phone": "138****1234"
+        },
+        "decrypt_source": null
+      },
+      "buyer": "buyer_***123",
+      "lines": [{ "order_line_id": "oline-6001" }, { "order_line_id": "oline-6002" }],
+      "rmas": [{ "rma_id": "rma-7001" }],
+      "timestamps": { "created_at": "2026-09-09T10:06:00Z", "updated_at": "2026-09-09T10:06:00Z" },
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "parent_ref": "channel-sync:taobao-shop-a",
+        "created_at": "2026-09-09T10:06:00Z",
+        "updated_at": "2026-09-09T10:06:00Z"
+      }
+    }
+  ],
+  "order_lines": [
+    {
+      "order_line_id": "oline-6001",
+      "order_id": "order-taobao-202609090001",
+      "platform_line_id": "TB202609090001-1",
+      "snapshot_line_ref": "sline-8001",
+      "listing_ref": "listing-4001",
+      "purchase_line_refs": [{ "purchase_order_id": "purchase-9001", "purchase_line_id": "pline-9101" }],
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "parent_ref": "order-taobao-202609090001",
+        "created_at": "2026-09-09T10:06:00Z",
+        "updated_at": "2026-09-09T10:06:00Z"
+      }
+    },
+    {
+      "order_line_id": "oline-6002",
+      "order_id": "order-taobao-202609090001",
+      "platform_line_id": "TB202609090001-2",
+      "snapshot_line_ref": "sline-8002",
+      "listing_ref": null,
+      "purchase_line_refs": [],
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "created_at": "2026-09-09T10:06:00Z",
+        "updated_at": "2026-09-09T10:06:00Z"
+      }
+    }
+  ],
+  "order_snapshots": [
+    {
+      "snapshot_id": "snap-5001",
+      "order_id": "order-taobao-202609090001",
+      "captured_at": "2026-09-09T10:05:00Z",
+      "amounts": {
+        "goods_amount": { "amount": 158.0, "currency": "CNY" },
+        "shipping_amount": { "amount": 0.0, "currency": "CNY" },
+        "discount_amount": { "amount": 10.0, "currency": "CNY" },
+        "payment_amount": { "amount": 148.0, "currency": "CNY" },
+        "currency": "CNY"
+      },
+      "line_snapshots": [
+        {
+          "snapshot_line_id": "sline-8001",
+          "external_item_ref": { "item_id": "tb-item-6688990011", "sku_id": "tb-sku-3001" },
+          "my_ref": "sku-3001",
+          "title_text": "便携蓝牙音箱 迷你无线低音炮 户外防水",
+          "spec_text": "黑色 M",
+          "unit_price": { "amount": 79.0, "currency": "CNY" },
+          "quantity": 1,
+          "line_amount": { "amount": 79.0, "currency": "CNY" },
+          "image_url": "https://img.alicdn.com/imgextra/i1/0000000001.jpg"
+        },
+        {
+          "snapshot_line_id": "sline-8002",
+          "external_item_ref": { "item_id": "tb-item-6688990011", "sku_id": "tb-sku-3001" },
+          "my_ref": null,
+          "title_text": null,
+          "spec_text": "黑色 M",
+          "unit_price": { "amount": 79.0, "currency": "CNY" },
+          "quantity": 1,
+          "line_amount": { "amount": 79.0, "currency": "CNY" },
+          "image_url": null
+        }
+      ],
+      "shipping_address_mask": {
+        "country": "中国",
+        "province": "广东省",
+        "city": "深圳市",
+        "district": "南山区",
+        "detail": "科技园***路 100 号",
+        "postal_code": "518000",
+        "receiver_name": "张*",
+        "receiver_phone": "138****1234"
+      },
+      "platform_raw": { "snapshot_url": "https://trade.taobao.com/detail/TB202609090001" },
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "parent_ref": "order-taobao-202609090001",
+        "created_at": "2026-09-09T10:05:00Z",
+        "updated_at": "2026-09-09T10:05:00Z"
+      }
+    }
+  ],
+  "purchase_orders": [
+    {
+      "purchase_order_id": "purchase-9001",
+      "order_id": "order-taobao-202609090001",
+      "supplier_ref": { "platform": "1688", "supplier_id": "1688-supplier-771", "name": "深圳华强北数码批发" },
+      "platform_purchase_no": "1688PO20260909001",
+      "purchase_status": "PAID",
+      "platform_status": "WAIT_BUYER_PAY",
+      "lines": [
+        {
+          "purchase_line_id": "pline-9101",
+          "order_line_ref": "oline-6001",
+          "source_sku_ref": "1688-sku-3001",
+          "quantity": 1,
+          "unit_price": { "amount": 45.9, "currency": "CNY" }
+        }
+      ],
+      "amount": { "amount": 45.9, "currency": "CNY" },
+      "tracking": [
+        { "company": "顺丰速运", "tracking_no": "SF1234567890", "status": "运输中", "url": "https://www.sf-express.com/we/wx/service/waybill/SF1234567890" }
+      ],
+      "timestamps": { "created_at": "2026-09-09T10:30:00Z", "updated_at": "2026-09-09T11:00:00Z" },
+      "provenance": {
+        "created_by_step": "LISTING",
+        "parent_ref": "order-taobao-202609090001",
+        "created_at": "2026-09-09T10:30:00Z",
+        "updated_at": "2026-09-09T11:00:00Z"
+      }
+    }
+  ],
+  "rmas": [
+    {
+      "rma_id": "rma-7001",
+      "order_id": "order-taobao-202609090001",
+      "type": "REFUND",
+      "platform_rma_id": "TB-refund-202609090777",
+      "rma_status": "WAITING_SELLER",
+      "platform_status": "REFUND_WAIT_SELLER_AGREE",
+      "lines": [{ "order_line_id": "oline-6001" }],
+      "amount": { "amount": 79.0, "currency": "CNY" },
+      "reason": "商品与描述不符",
+      "timestamps": { "created_at": "2026-09-09T14:00:00Z", "updated_at": "2026-09-09T14:00:00Z" },
+      "provenance": {
+        "created_by_step": "CAPTURE",
+        "parent_ref": "order-taobao-202609090001",
+        "created_at": "2026-09-09T14:00:00Z",
+        "updated_at": "2026-09-09T14:00:00Z"
+      }
+    }
+  ],
+  "channel_sync_states": [
+    {
+      "channel_id": "taobao-shop-a",
+      "cursor": { "last_modified": "2026-09-09T14:00:00Z", "page": 3 },
+      "updated_at": "2026-09-09T14:05:00Z"
+    }
+  ]
+}
