@@ -12,7 +12,9 @@ FROM maven:3.9.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 
 # Aliyun 国内镜像 settings（依赖下载确定性；与根 pom repositories 同源）
-COPY .mvn/settings-aliyun.xml /root/.m2/settings.xml
+# 注意：不能放在 /root/.m2 下 —— 下方 RUN 的 --mount=type=cache,target=/root/.m2 会
+# shadow 该目录，使 settings.xml 在 RUN 内不可见（BuildKit 确定性失败）。放 WORKDIR 下。
+COPY .mvn/settings-aliyun.xml /workspace/settings.xml
 
 # 复制全部源码与 pom（仓库体积小；.dockerignore 已排除 target/.git/.workbuddy 等）
 COPY . .
@@ -20,7 +22,7 @@ COPY . .
 # BuildKit cache mount：~/.m2 跨构建缓存，依赖层不因源码变更而重复下载
 # 仅构建 app 模块及其上游（-am），其余模块不打包（空壳，无发布产物）
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -ntp -s /root/.m2/settings.xml -pl app -am clean package -DskipTests
+    mvn -B -ntp -s /workspace/settings.xml -pl app -am clean package -DskipTests
 
 # ---------- Stage 2: 分层提取（tools jarmode，Boot 4 已移除 layertools） ----------
 # --launcher 输出传统分层布局：extracted/{dependencies,spring-boot-loader,snapshot-dependencies,application}
