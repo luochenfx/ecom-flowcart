@@ -39,9 +39,11 @@ interface RmaCapability          // 售后（v1 查询只读；操作留平台�
 // —— 1688 货源/采购侧（同一套模式）——
 interface OfferFetchCapability    // 采集：拉取 offer/SKU/类目属性
   OfferData fetchOffer(SourceRef ref)
-interface PurchaseCapability      // 采购：fastCreateOrder/取消/支付/物流追踪
-  PurchaseResult createPurchase(PurchaseDraft draft)
-  LogisticsTrace fetchLogistics(String platformPurchaseNo)
+interface PurchaseCapability      // 采购：下单 / 取消 / 支付 / 物流追踪（1688 侧 = 四段独立调用，见 §9）
+  PurchaseResult createPurchase(PurchaseDraft draft)       // 1688 fastCreateOrder（flow=saleproxy 一件代发）
+  void cancelPurchase(String platformPurchaseNo)           // 1688 alibaba.trade.cancel（仅未付款可撤）
+  void payPurchase(String platformPurchaseNo)              // 1688 免密代扣 / 收银台
+  LogisticsTrace fetchLogistics(String platformPurchaseNo)  // 1688 alibaba.logistics.trace
 
 interface AuthCapability          // 可选：OAuth refresh 等平台专属凭据刷新
   Credential refresh(Credential stale)
@@ -118,6 +120,27 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 
 ## 9. 遗留 fog（实现期回填）
 
-- 各平台 API → 能力接口的**逐项能力映射表**（哪些平台实现哪些 Capability、平台 API 版本/端点差异）——需按真实平台文档逐平台核实（#2/#3 research 已提供初步锚点）。
+### 9.1 1688 侧逐项能力映射（#35 回填；端点/参数待 #23 实测校准）
+
+| Capability | 方法 | 1688 端点 | 关键参数 / 约束 | 状态 |
+|---|---|---|---|---|
+| `OfferFetchCapability` | `fetchOffer(SourceRef)` | `alibaba.product.get` | `productId`（form 入参）；出 SPU/SKU 规格价/图/库存 | 已实现（#19） |
+| `PurchaseCapability` | `createPurchase(PurchaseDraft)` | `alibaba.trade.fastCreateOrder` | `flow=saleproxy`（一件代发）；`cargoParamList[]{offerId, specId, quantity}`；`addressParam` 四级地址；**仅同供应商可合单，跨供应商须拆单** | 待实现（#23） |
+| `PurchaseCapability` | `payPurchase(String)` | `alibaba.trade.pay.protocolPay.preparePay`（免密代扣）；无代扣协议退收银台 `alibaba.alipay.url.get`（链接 30 分钟有效） | `platformPurchaseNo` | 待实现（#23） |
+| `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | **仅未付款可撤**；已付款须走售后退款 | 待实现（#23） |
+| `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.logistics.trace` | `platformPurchaseNo` | 待实现（#23） |
+| `OrderSyncCapability` | `fetchOrders(SyncCursor)` / `fetchOrderDetail(String)` | `alibaba.trade.getBuyerOrderList`（增量分页）／`alibaba.trade.get.buyerView`（订单快照：金额/明细/运费/支付有效期/供应商） | 按时间或状态游标；#8「拉取为真相」单写入路径 | 待实现（#22 消费） |
+| `AuthCapability` | `refresh(Credential)` | OAuth2.0 换 `access_token`（约 2h 有效期） | App Key（标识）+ App Secret（签名，严禁硬编码）；签名 MD5 / HMAC-MD5，部分接口 `_aop_timestamp` + `_aop_signature`（HMAC-SHA1）——签名属平台知识，落 Adapter | 待实现（#23） |
+| `AddressCapability` | — | **不实现**：地址解密归销售侧凭据域（§5）；1688 侧只有辅助接口 `alibaba.trade.receiveAddress.get` / `alibaba.trade.addresscode.parse` | — | — |
+| `PublishCapability` / `ShipmentCapability` / `RmaCapability` | — | **不实现**：铺货与发货回传面向销售平台；1688 作为货源侧只被采集与采购 | — | — |
+
+- 未进契约的 1688 备用接口：`alibaba.createOrder.preview`（下单前置校验：SKU 有效性 / 库存 / 起批量 / 运费 / 区域限售）、`com.alibaba.fenxiao-crossborder/product.freight.estimate`（运费预估）——是否并入 `createPurchase` 内部步骤，待 #22/#23 定。
+- 来源：`.workbuddy/research/domestic-platforms.md` §1.4–§1.7（**二手来源，端点与参数字段名未经真实 API 实测**）；映射表的机器可读形态仍是 core 的 `OfferData` / `PurchaseDraft` / `PurchaseCapability`（见文首状态行：不为 Adapter 造伪 schema）。
+- **`specId` 语义待校准**：`cargoParamList[]` 的 `specId` 由 `OfferData.OfferSku.sourceSpecId` 承载（#35 落字段），但本仓 fixture 是自造样本（两条不同 SKU 的 `specId` 取值相同、实为规格维度 id）→ 只证明字段存在、**不证明它是逐 SKU 的下单键**；且该值从 master（`Sku`）到 `PurchaseDraftItem` 的承载尚未落地。#23 用真实响应校准后一并定字段来源与载体。
+
+### 9.2 其余 fog
+
+- 其余平台（淘宝 / 拼多多 / 速卖通）的逐项能力映射表——各自 Adapter 落地前按平台文档逐平台核实（#2/#3 research 已提供初步锚点）。
+- 1688 买家侧**退款 / 售后**接口未核实（是否进 `RmaCapability`、粒度是否对齐 #8 的 OrderRMA `type=REFUND|DISPUTE`）——实测后回填。
 - 每平台 token bucket 的具体参数与退避档位——以平台官方限流文档为准微调（Adapter 内自治，不升 core）。
 - `platform_raw` 逃生口的保留/截断策略（体积与查询需求平衡）——实现期定。
