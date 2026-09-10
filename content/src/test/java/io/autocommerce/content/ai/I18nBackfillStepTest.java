@@ -10,7 +10,9 @@ import io.autocommerce.content.testsupport.ContentDocs;
 import io.autocommerce.content.testsupport.FakeLlmGateway;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -85,10 +87,62 @@ class I18nBackfillStepTest {
 
         assertThat(descriptor.id()).isEqualTo("i18n.backfill");
         assertThat(descriptor.input()).extracting("path")
-                .containsExactlyInAnyOrder("spu.titles", "spu.descriptions");
+                .containsExactlyInAnyOrder("spu.titles", "spu.descriptions", "listing.locales");
         assertThat(descriptor.output()).extracting("path")
                 .containsExactlyInAnyOrder("spu.titles", "spu.descriptions");
         assertThat(descriptor.modelRequirement().name()).isEqualTo("LLM");
         assertThat(Map.of()).isEmpty();
+    }
+
+    /**
+     * AC-3：Listing 装配时声明的 {@code listing.locales} 优先于 params.target_locales（specs/0006 §2
+     * "一处翻译多处复用"）。Listing 同时铺到 en + ru + es → 三个目标 locale 都要回填 master canonical。
+     */
+    @Test
+    void listingLocalesOverrideParams_targetsForBackfill() throws Exception {
+        var document = ContentDocs.masterWithListing(List.of("zh-CN", "en", "ru", "es"));
+        ContentWorkingSet working = ContentWorkingSet.of(document, ContentDocs.listingId());
+        I18nBackfillStep step = new I18nBackfillStep(llm);
+        llm.respond("translated-en").respond("translated-ru").respond("translated-es");
+
+        StepResult result = step.execute(new ListingStepContext(working, step.descriptor().params()));
+
+        assertThat(result.outcome()).isEqualTo(StepOutcome.OK);
+        // 三个非源 locale 都被翻译回填到 master canonical
+        assertThat(working.spuTitles()).containsEntry("en", "translated-en")
+                .containsEntry("ru", "translated-ru")
+                .containsEntry("es", "translated-es");
+        assertThat(llm.requests()).hasSize(3);
+    }
+
+    /**
+     * Hard cap = 10（specs/0006 §10 fog #20 拍板）：超过 10 个目标 locale → 截断 + DEGRADED 返回（让执行器登记
+     * degraded_steps 给看板 HITL）。超限 locale 不翻译、产物本身已写 master canonical，不阻断铺货。
+     */
+    @Test
+    void hardCap10_overflowTruncatedAndDegraded() throws Exception {
+        // 12 个目标 locale，超 cap 10 → 截断 2 个
+        List<String> tooMany = IntStream.range(0, 12).mapToObj(i -> "l" + i).toList();
+        var document = ContentDocs.masterWithListing(tooMany);
+        ContentWorkingSet working = ContentWorkingSet.of(document, ContentDocs.listingId());
+        I18nBackfillStep step = new I18nBackfillStep(llm);
+        // 排队翻译的 locale = 12 个，去掉源 locale "zh-CN" 剩 11（content master 默认有 zh-CN），
+        // hard cap 10 → 实际只翻 10 个
+        for (int i = 0; i < I18nBackfillStep.MAX_TARGET_LOCALES; i++) {
+            llm.respond("translated-l" + i);
+        }
+
+        StepResult result = step.execute(new ListingStepContext(working, step.descriptor().params()));
+
+        assertThat(result.outcome())
+                .as("hard cap 触发应返回 DEGRADED，让执行器登记 degraded_steps")
+                .isEqualTo(StepOutcome.DEGRADED);
+        assertThat(result.reason()).contains("超过目标 locale 上限").contains("截断");
+        // 实际翻译了 10 个（cap 内）
+        assertThat(llm.requests()).hasSize(I18nBackfillStep.MAX_TARGET_LOCALES);
+        // master canonical 里写满了 cap 个翻译
+        long translatedLocales = working.spuTitles().entrySet().stream()
+                .filter(e -> e.getValue().startsWith("translated-")).count();
+        assertThat(translatedLocales).isEqualTo(I18nBackfillStep.MAX_TARGET_LOCALES);
     }
 }
