@@ -94,7 +94,7 @@ public final class OfferCatalogMapper {
             skus.add(new Sku(
                     skuId, spuId,
                     offerSku.specs() == null ? List.of() : offerSku.specs(),
-                    offerSku.price(), null, null, sourceSkuId,
+                    offerSku.price(), null, null, sourceSkuId, offerSku.sourceSpecId(),
                     captureProvenance(null, fetchedAt)));
             spuSkus.add(new SkuRef(skuId));
         }

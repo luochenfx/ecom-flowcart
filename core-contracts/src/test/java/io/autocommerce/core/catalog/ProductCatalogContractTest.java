@@ -60,11 +60,17 @@ class ProductCatalogContractTest {
         assertThat(spu.provenance().createdByStep()).isEqualTo(io.autocommerce.core.catalog.model.ProvenanceStep.CAPTURE);
         assertThat(spu.provenance().parentRef()).isEqualTo("offer-6688990011");
 
-        // sku-3002 显式 null 语义（barcode/images/sourceSkuId 可空）
+        // 货源侧标识符落 master（#39）：sourceSpecId = 1688 下单键，与 sourceSkuId（规格组合内部 id）并列
+        assertThat(catalog.skus().get(0).sourceSkuId()).isEqualTo("1688-sku-3001");
+        assertThat(catalog.skus().get(0).sourceSpecId()).isEqualTo("b266e0726506185beaf205cbae88530d");
+
+        // sku-3002 显式 null 语义（barcode/images/sourceSkuId/sourceSpecId 可空）
         Sku sku2 = catalog.skus().get(1);
         assertThat(sku2.skuId()).isEqualTo("sku-3002");
         assertThat(sku2.barcode()).isNull();
         assertThat(sku2.images()).isNull();
+        assertThat(sku2.sourceSkuId()).isNull();
+        assertThat(sku2.sourceSpecId()).isNull();
         assertThat(sku2.costPrice().amount()).isEqualTo("45.90");
 
         Listing listing = catalog.listings().get(0);
