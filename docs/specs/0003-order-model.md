@@ -41,8 +41,9 @@ OrderLine (履约身份，业务事实在快照)
 └── purchase_line_refs[]             # 关联采购行（1 销售行 → N 采购行：跨供应商拆单）
 
 PurchaseOrder (一等实体，自有生命周期/workflow，Order → 1:N)
-├── supplier_ref (1688 卖家)         # 一采购单仅限同供应商
-├── platform_purchase_no (1688 单号)
+├── supplier_ref (1688 卖家)         # 一采购单仅限同供应商（supplier_ref.platform = const "1688"）
+├── platform_purchase_no (1688 单号) # platform* = 本记录所属平台（1688）的号，非销售平台
+├── platform_status (+time)          # 1688 侧原始状态旁路，不做翻译
 ├── purchase_status                  # 采购 canonical 轴（PENDING_PAYMENT/PAID/SHIPPED/…）
 ├── lines[] (order_line_ref → 销售行) 
 ├── amount / tracking[]              # 供应商发货物流（logistics.trace 回填）
@@ -60,6 +61,8 @@ ChannelSyncState (每 channel 一行的增量游标)
 ```
 
 **边界规则**：业务事实（下单时已确定的商品/价格）只进快照；履约推进才补齐的操作数据（解密地址、采购关联、物流单号）在 Order/OrderLine/PurchaseOrder；状态演进不落数据行（事件史是真相，投影只反映最新态）。
+
+**命名澄清（#36）**：`platform*` 前缀 = 该记录**所属平台**的原始值 / 状态旁路，指向随记录子树变化——`Order` / `OrderLine` / `OrderRma` 指销售平台（taobao/pdd/aliexpress），`PurchaseOrder` / `SupplierRef` 指货源平台（1688）。故 `PurchaseOrder.platform_purchase_no` / `platform_status` 指 **1688 侧**，不是销售平台；货源侧**标识符**统一用 `source*`（`sourceSkuId` / `sourceSpecId` / `sourceOfferId` / `sourceSkuRef`）。规则全文见 `CONTEXT.md`「外部标识符前缀」。
 
 ## 3. 快照模型（铁律落地）
 
