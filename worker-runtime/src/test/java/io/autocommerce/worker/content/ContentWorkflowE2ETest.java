@@ -111,8 +111,8 @@ class ContentWorkflowE2ETest {
             ContentWorkflowResult result = launcher(env).run(
                     new ContentWorkflowInput(SPU_ID, LISTING_ID, ContentPlan.standard()));
 
-            // —— 链路收敛 ——
-            assertThat(result.contentReady()).isTrue();
+            // —— 链路收敛（contentReady 是推导量，能拿到 result 即就绪——见 ContentWorkflowResult 类 javadoc） ——
+            assertThat(result).isNotNull();
             assertThat(result.runs()).extracting(ContentStepRun::stepId).containsExactly(
                     ContentPlan.I18N_BACKFILL, ContentPlan.TITLE_REWRITE, ContentPlan.DESC_GENERATE,
                     ContentPlan.PRICE_STRATEGY, ContentPlan.MEDIA_PROCESS);
@@ -177,8 +177,8 @@ class ContentWorkflowE2ETest {
             ContentWorkflowResult result = launcher(env).run(new ContentWorkflowInput(SPU_ID, LISTING_ID,
                     ContentPlan.standard().without(ContentPlan.I18N_BACKFILL)));
 
-            // 链路仍收敛；失败的两步留痕（看板 HITL 复核）
-            assertThat(result.contentReady()).isTrue();
+            // 链路仍收敛（contentReady 是推导量）；失败的两步留痕（看板 HITL 复核）
+            assertThat(result).isNotNull();
             assertThat(result.degradedStepIds()).containsExactly(
                     ContentPlan.TITLE_REWRITE, ContentPlan.DESC_GENERATE);
             assertThat(result.runs()).filteredOn(r -> r.outcome() == StepOutcome.DEGRADED)
@@ -314,10 +314,25 @@ class ContentWorkflowE2ETest {
                         "llm.model", "fake-model",
                         "llm.api_key", "test-key"),
                 mediaRoot);
-        ContentChainActivities activities = new ContentChainActivitiesImpl(store,
-                new ContentStepExecutor(provider.steps(), Clock.systemUTC()));
 
         TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance();
+        ContentChainActivities activities = new ContentChainActivitiesImpl(store,
+                new ContentStepExecutor(provider.steps(), Clock.systemUTC()),
+                "ContentWorkflow",
+                new WorkflowCoordinates() {
+                    @Override
+                    public String workflowId() {
+                        return ContentRuntime.workflowIdFor(LISTING_ID);
+                    }
+
+                    @Override
+                    public String runId() {
+                        // 第一次硬失败时 runId 还没确定（activity 抛 ContentChainFailedException 时
+                        // Temporal run 仍在构造），用 workflowId 占位以满足构造器非空约束；看板消费者
+                        // 真正用 runId 时从 Temporal UI 取（事件丢失场景的兜底巡检就有这个值）。
+                        return ContentRuntime.workflowIdFor(LISTING_ID);
+                    }
+                });
         ContentWorkerFactory.register(env.newWorker(ContentRuntime.TASK_QUEUE), activities);
         if (!env.isStarted()) {
             env.start();

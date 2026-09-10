@@ -88,8 +88,9 @@ interface ModelResolver {
 - 内容链 workflow 定义 Step 序列（翻译 → 改写 → 价格 → 媒体），每步一个 activity；RetryPolicy 按 Step 语义配置（LLM 超时重试有限次，`retryable_after` 参考 #9 限流自治）。
 - **单 Step 重试耗尽 → 降级分支**（workflow 代码表达，非异常中断）：
   - 降级可用：该 Step 产物缺省（原文/默认加价率），写 `degraded_steps`，内容链继续；
-  - 硬依赖 Step 失败：内容链 failed（Listing 不进铺货队列），`sys.workflow.failed` 事件（#10）告警，人工/重放路径（#13）。
+  - 硬依赖 Step 失败：内容链 failed（Listing 不进铺货队列），**发 `sys.workflow.failed` 事件（#10）告警**——见下方"硬失败事件"段。事件 payload = Temporal workflowId + runId + 失败 Step + 原因，不依赖业务库行。
 - 幂等/重入：内容链重跑 = 同 workflowId 新 run 覆盖内容（对齐 #11 `AllowDuplicateFailedOnly` 哲学）；与铺货 workflow 互不触发。
+- **硬失败事件（`sys.workflow.failed`，A-prime 降级语义，#20 拍板）**：activity 在抛回 `ContentChainFailedException` 给 Temporal 之前，先通过 `worker.event.EventPublisher.publishFailed(SysWorkflowFailedEvent)` 发一个事件。**承认极少数情况下通知可能丢失**——例如 process 在落库后、发事件前 crash。**对冲方案**：消费方需配合 Temporal UI 巡检兜底（Temporal event history 是真相源，`sys.workflow.failed` 仅是 signal）。事务基建（落库与发事件同事务）属于 #22 publish 跨域基建，#20 不引入。
 
 ## 6. 结果落库（单稿制）
 
@@ -138,6 +139,7 @@ interface ModelResolver {
   - **A（保持现状，保守）**：接受缺口——重跑仅限 failed；"重新生成内容"需另设 workflowId 口径（如在 id 里带 generation 计数），代价是这条路要新建编排入口。
   - **B（放开终结后重跑）**：改 `WorkflowIdConflictPolicy = FAIL` + `WorkflowIdReusePolicy = ALLOW_DUPLICATE`——仍拒**并发**重复，但放行**终结后**重跑。代价：同一 Listing 的**连续误触**（相隔较久的第二次误触发）会真的再烧一次 token。
   - ⚠️ 本票（#20）按已文档化的 A 实现，**未擅自放宽**；B 属回归本行时必须显式改 `ContentWorkflowLauncher.optionsFor` 一处。
+- **「内容就绪态」不落字段，承认推导量语义（#20 实现拍板的正式决议）**：AC-1 字面要求"收敛为内容就绪态"，可解读为两条：(A) 加 `Listing.contentReady` 持久化字段；(B) "就绪"= workflow 终态推导量（workflow 跑完 + 返回结果 = 就绪；硬依赖失败走 workflow failed，无返回 = 未就绪）。**采纳 B**（与 #21 publish 消费对齐：内容链终态事件触发铺货，不读持久化字段）。理由：(1) 加 `Listing.contentReady` 会与 workflow 终态构成两个真相源——一旦不同步（罕见但真实的并发写），运营与铺货消费各执一词立刻失语；(2) 当前 `ContentWorkflowResult.contentReady()` 死方法（恒 true）正是该设计的反射教训，#20 实现期一并删；(3) `degraded_steps` 已承载"未完全就绪但可铺"的缺口语义，看板 HITL 已有触发面。**对应的 Java 契约**：`ContentWorkflowResult.contentReady()` 方法删除（恒 true 占位 = 第二个真相源）；`ContentChainResult.contentReady` 字段保留（恒 true 构造语义不变，javadoc 改写说明推导量本质）。
 
 ## 11. 实现落点（#20，只记位置不重述语义）
 
