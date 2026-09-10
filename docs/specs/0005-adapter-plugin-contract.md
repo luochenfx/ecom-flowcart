@@ -46,7 +46,7 @@ interface PurchaseCapability      // 采购：下单 / 取消 / 支付 / 物流�
   LogisticsTrace fetchLogistics(String platformPurchaseNo)  // 1688 alibaba.logistics.trace
 
 interface AuthCapability          // 可选：OAuth refresh 等平台专属凭据刷新
-  Credential refresh(Credential stale)
+  CredentialView refresh(CredentialView stale)  // 入/出参 = 解密内存对象；解密/加密归 Channel 域（§5）
 ```
 
 - 未实现的能力 = core 侧该链路不可用（如纯采购平台 Adapter 不实现 PublishCapability），启动期能力探测（SPI provider 声明实现清单），**不影响 core 其它链路**。
@@ -78,7 +78,7 @@ interface AuthCapability          // 可选：OAuth refresh 等平台专属凭�
 - **刷新职责**：
   - 长期 token（v1 主形态）：手动填入 + `EXPIRED` 状态 + 看板告警人工处理；
   - OAuth refresh 平台（速卖通）：平台专属逻辑在**该平台 Adapter 的 `AuthCapability`**；refresh 触发由 core 统一在调用前 `ensureValid(channel)`，core 只消费"凭据是否可用"，不实现任何平台的刷新协议。
-- **CredentialView**：Adapter 接口收到的是解密后的内存对象 + 有效期（不传明文 token 字符串，防日志泄漏）。
+- **CredentialView**：Adapter 接口收到的是解密后的内存对象 + 有效期（不传明文 token 字符串，防日志泄漏）。**双向成立**——`AuthCapability.refresh` 的入 / 出参都是 `CredentialView`：解旧密文、封新密文（刷出来的新 `access_token` 等）都由 Channel 域完成，Adapter 既不持有 AES 密钥、也不产出 `encryptedPayload`（§5 / §8 密钥管理单一职责）。
 - **签名差异**（1688 自定义签名、淘宝/速卖通 OAuth header）= 平台知识 → Adapter 内实现，core 不感知。
 
 ## 6. 错误契约与限流
@@ -130,13 +130,13 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 | `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | **仅未付款可撤**；已付款须走售后退款 | 待实现（#23） |
 | `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.logistics.trace` | `platformPurchaseNo` | 待实现（#23） |
 | `OrderSyncCapability` | `fetchOrders(SyncCursor)` / `fetchOrderDetail(String)` | `alibaba.trade.getBuyerOrderList`（增量分页）／`alibaba.trade.get.buyerView`（订单快照：金额/明细/运费/支付有效期/供应商） | 按时间或状态游标；#8「拉取为真相」单写入路径 | 待实现（#22 消费） |
-| `AuthCapability` | `refresh(Credential)` | OAuth2.0 换 `access_token`（约 2h 有效期） | App Key（标识）+ App Secret（签名，严禁硬编码）；签名 MD5 / HMAC-MD5，部分接口 `_aop_timestamp` + `_aop_signature`（HMAC-SHA1）——签名属平台知识，落 Adapter | 待实现（#23） |
+| `AuthCapability` | `refresh(CredentialView)` | OAuth2.0 换 `access_token`（约 2h 有效期） | App Key（标识）+ App Secret（签名，严禁硬编码）；签名 MD5 / HMAC-MD5，部分接口 `_aop_timestamp` + `_aop_signature`（HMAC-SHA1）——签名属平台知识，落 Adapter | 待实现（#23） |
 | `AddressCapability` | — | **不实现**：地址解密归销售侧凭据域（§5）；1688 侧只有辅助接口 `alibaba.trade.receiveAddress.get` / `alibaba.trade.addresscode.parse` | — | — |
 | `PublishCapability` / `ShipmentCapability` / `RmaCapability` | — | **不实现**：铺货与发货回传面向销售平台；1688 作为货源侧只被采集与采购 | — | — |
 
 - 未进契约的 1688 备用接口：`alibaba.createOrder.preview`（下单前置校验：SKU 有效性 / 库存 / 起批量 / 运费 / 区域限售）、`com.alibaba.fenxiao-crossborder/product.freight.estimate`（运费预估）——是否并入 `createPurchase` 内部步骤，待 #22/#23 定。
 - 来源：`.workbuddy/research/domestic-platforms.md` §1.4–§1.7（**二手来源，端点与参数字段名未经真实 API 实测**）；映射表的机器可读形态仍是 core 的 `OfferData` / `PurchaseDraft` / `PurchaseCapability`（见文首状态行：不为 Adapter 造伪 schema）。
-- **`specId` 语义待校准**：`cargoParamList[]` 的 `specId` 由 `OfferData.OfferSku.sourceSpecId` 承载（#35 落字段），但本仓 fixture 是自造样本（两条不同 SKU 的 `specId` 取值相同、实为规格维度 id）→ 只证明字段存在、**不证明它是逐 SKU 的下单键**；且该值从 master（`Sku`）到 `PurchaseDraftItem` 的承载尚未落地。#23 用真实响应校准后一并定字段来源与载体。
+- **`specId` 载体已落地、值侧来源待校准**：`cargoParamList[]` 的 `specId` 由 `OfferData.OfferSku.sourceSpecId`（#35 落）承载，**标准模型侧承载链已打通**（#39：采集面 → master `Sku.sourceSpecId` → `PurchaseDraftItem.sourceSpecId`，schema `Sku.source_spec_id`）。但**读哪个 1688 字段得到该值仍未定**：本仓 fixture 是自造样本（两条不同 SKU 的 `specId` 取值相同、实为规格维度 id）→ 只证明字段存在、**不证明它是逐 SKU 的下单键**。**#23 用真实响应 / 1688 沙箱校准**（推荐先读 `skuInfo.skuMap` 条目 `specId`；若该字段不存在或仍是维度级 id，则按 `skuMap` key 的维度顺序组装 `skuInfo.specs[].values[].valueId`），并把 fixture 校正为**逐 SKU 取值不同的 32-hex 形态**（官方 apidoc 的 `specId` 形态即 32 位十六进制串）。
 
 ### 9.2 其余 fog
 

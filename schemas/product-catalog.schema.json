@@ -42,6 +42,7 @@
         "barcode": { "type": ["string", "null"] },
         "images": { "type": "array", "items": { "$ref": "#/$defs/MediaRef" }, "description": "变体图（可选）" },
         "source_sku_id": { "type": "string", "description": "1688 skuMap 原始 skuId" },
+        "source_spec_id": { "type": "string", "description": "1688 下单键 specId（fastCreateOrder 的 cargoParamList[] 每项必填）；与 source_sku_id 语义不同、不可互换" },
         "provenance": { "$ref": "#/$defs/Provenance" }
       }
     },

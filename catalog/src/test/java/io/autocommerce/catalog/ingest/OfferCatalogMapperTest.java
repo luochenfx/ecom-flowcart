@@ -46,7 +46,7 @@ class OfferCatalogMapperTest {
                 List.of("https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000001.jpg",
                         "https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000002.jpg"),
                 List.of(
-                        new OfferData.OfferSku("523681097354", null, "颜色:黑色",
+                        new OfferData.OfferSku("523681097354", "b266e0726506185beaf205cbae88530d", "颜色:黑色",
                                 List.of(new SpecValue("颜色", "黑色")), new Money("45.9", "CNY")),
                         new OfferData.OfferSku("523681097355", null, "颜色:白色",
                                 List.of(new SpecValue("颜色", "白色")), new Money("45.9", "CNY"))),
@@ -78,6 +78,10 @@ class OfferCatalogMapperTest {
         assertThat(first.skuId()).isEqualTo("sku-1688-6688990011-523681097354");
         assertThat(first.spuId()).isEqualTo("spu-1688-6688990011");
         assertThat(first.sourceSkuId()).isEqualTo("523681097354");
+        // 货源侧标识符照搬（#39）：sourceSpecId（1688 下单键）随 sourceSkuId 一同到 master，
+        // 采集侧未填充时原样透传 null（值侧来源校准属 #23）
+        assertThat(first.sourceSpecId()).isEqualTo("b266e0726506185beaf205cbae88530d");
+        assertThat(doc.skus().get(1).sourceSpecId()).isNull();
         assertThat(first.specs()).containsExactly(new SpecValue("颜色", "黑色"));
         assertThat(first.costPrice()).isEqualTo(new Money("45.9", "CNY"));
         assertThat(first.barcode()).isNull();
