@@ -44,7 +44,10 @@ public final class HumanContentEdit {
                 && (descriptionOverrides == null || descriptionOverrides.isEmpty())) {
             throw new IllegalArgumentException("人工编辑至少需给出标题或描述的一处改动");
         }
-        Listing target = (document.listings() == null ? List.<Listing>of() : document.listings()).stream()
+        // 一次判空：listings 为 null/空时下面的 orElseThrow 已拦截，后续循环复用同一个非空视图
+        List<Listing> sourceListings =
+                document.listings() == null ? List.<Listing>of() : document.listings();
+        Listing target = sourceListings.stream()
                 .filter(l -> listingId != null && listingId.equals(l.listingId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("文档内无 Listing: " + listingId));
@@ -73,7 +76,7 @@ public final class HumanContentEdit {
                 target.specMappings(), target.skuSet(), target.images(), target.degradedSteps(), provenance);
 
         List<Listing> listings = new ArrayList<>();
-        for (Listing listing : document.listings() == null ? List.<Listing>of() : document.listings()) {
+        for (Listing listing : sourceListings) {
             listings.add(listing.listingId().equals(listingId) ? edited : listing);
         }
         return new ProductCatalog(document.schemaVersion(), document.spus(), document.skus(), listings,
