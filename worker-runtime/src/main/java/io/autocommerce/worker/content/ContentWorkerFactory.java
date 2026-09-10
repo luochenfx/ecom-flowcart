@@ -48,7 +48,22 @@ public final class ContentWorkerFactory {
         Objects.requireNonNull(client, "WorkflowClient 必填");
         ContentAiStepProvider provider = ContentAiStepProvider.of(config, mediaRoot);
         ContentChainActivities activities = new ContentChainActivitiesImpl(store,
-                new ContentStepExecutor(provider.steps(), Clock.systemUTC()));
+                new ContentStepExecutor(provider.steps(), Clock.systemUTC()),
+                "ContentWorkflow",
+                // 生产 worker 取 ActivityExecutionContext 派生坐标；start() 路径暂用"未启动"占位
+                // ——本方法返回后调用方会用 register() 接管 activity 实例并接 ActivityExecutionContext，
+                // 这里占位仅保证构造器不抛 NPE。
+                new WorkflowCoordinates() {
+                    @Override
+                    public String workflowId() {
+                        return "unbound-workflow-id";
+                    }
+
+                    @Override
+                    public String runId() {
+                        return "unbound-run-id";
+                    }
+                });
         WorkerFactory factory = WorkerFactory.newInstance(client);
         register(factory.newWorker(ContentRuntime.TASK_QUEUE), activities);
         factory.start();

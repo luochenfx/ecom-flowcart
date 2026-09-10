@@ -81,4 +81,22 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- 内容链测试 fixture（ContentDocs / FakeLlmGateway / FakeMediaProcessor）随 test-jar 暴露给
+           worker-runtime 等其他模块复用（#20 AC-6 单元测试依赖） -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

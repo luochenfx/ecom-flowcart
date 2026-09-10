@@ -40,6 +40,15 @@
       <artifactId>content</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- 内容链测试 fixture（ContentDocs / FakeLlmGateway / FakeMediaProcessor），供 worker-runtime
+         activity 单元测试复用 -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>content</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
     <!-- CatalogStore 端口：activity 读写 product 文档（v1 实现 = JsonFileCatalogStore） -->
     <dependency>
       <groupId>io.autocommerce</groupId>
