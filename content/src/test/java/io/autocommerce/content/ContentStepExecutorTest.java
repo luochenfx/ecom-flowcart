@@ -1,6 +1,7 @@
 package io.autocommerce.content;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import io.autocommerce.core.catalog.model.ProvenanceStep;
 import io.autocommerce.core.step.AiStep;
 import io.autocommerce.core.step.FieldRef;
 import io.autocommerce.core.step.ModelRequirement;
@@ -128,6 +129,24 @@ class ContentStepExecutorTest {
 
         assertThat(executor.materialize(working).listings().get(0).provenance().updatedAt())
                 .isEqualTo("2026-09-10T12:00:00Z");
+    }
+
+    /**
+     * 降级产物不污染 provenance：addDegradedStep 只登记降级留痕，不应触发 provenance 升为 AI
+     * （specs/0006 §6 单稿制：物化只对真实写入盖章；缺省值不算 AI 写的）。
+     * 否则运营看 Listing 时分不清"这个字段是 AI 改写的"vs"这是降级后用原文兜底"。
+     */
+    @Test
+    void degradedStep_doesNotStampAiProvenanceOnListing() {
+        ContentStepExecutor executor = new ContentStepExecutor(List.of(new DegradingStep()), ContentDocs.FIXED_CLOCK);
+        ContentWorkingSet working = ContentWorkingSet.of(ContentDocs.masterWithListing(), ContentDocs.listingId());
+        executor.execute(working, new ContentPlan.PlanStep("degrade.step", false));
+
+        var listing = executor.materialize(working).listings().get(0);
+        assertThat(listing.degradedSteps()).hasSize(1);
+        assertThat(listing.provenance().updatedByStep())
+                .as("仅降级留痕不触发 provenance 升 AI（降级产物 = 缺省/原文，非 AI 写）")
+                .isNotEqualTo(ProvenanceStep.AI);
     }
 
     private static final class ThrowingStep implements AiStep {

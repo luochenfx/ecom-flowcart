@@ -50,7 +50,16 @@ public final class ContentWorkingSet {
 
     private List<ListingSku> skuSet;
     private boolean spuTouched;
-    private boolean listingTouched;
+    /**
+     * AI 真实写过 listing 字段（overrides / sku_set 等）。物化时把 provenance 升为 AI。
+     * 区别于 {@link #degradedTouched}：后者仅登记降级留痕——降级产物不算 AI 写的，不该升 provenance。
+     */
+    private boolean listingAiTouched;
+    /**
+     * 本次运行仅动了降级留痕（degraded_steps）。物化时仍写 listing（落库 degraded_steps），
+     * 但 provenance.updated_by_step 保持上游值，不标 AI。
+     */
+    private boolean degradedTouched;
     private final Set<String> mediaTouched = new LinkedHashSet<>();
 
     private ContentWorkingSet(ProductCatalog source, String listingId, Spu spu, Listing listing,
@@ -154,7 +163,7 @@ public final class ContentWorkingSet {
 
     public void skuSet(List<ListingSku> value) {
         this.skuSet = new ArrayList<>(value == null ? List.of() : value);
-        this.listingTouched = true;
+        this.listingAiTouched = true;
     }
 
     public List<MediaAsset> mediaAssets() {
@@ -180,17 +189,20 @@ public final class ContentWorkingSet {
     }
 
     public void markListingTouched() {
-        this.listingTouched = true;
+        this.listingAiTouched = true;
     }
 
     /**
      * 登记一条降级留痕。**本次运行的判定覆盖该 Step 的历史留痕**（同 step 重跑以最新 reason 为准）：
      * 留痕表达的是"这份 Listing 当前的内容缺口"，不是"历史上出过几次问题"——不累积成流水账。
+     *
+     * <p>降级产物 = 缺省值（原文/成本价），**不算 AI 写的**——provenance 保持上游值，不升 AI
+     * （specs/0006 §6 单稿制：物化只对真实写入盖章）。
      */
     public void addDegradedStep(String step, String reason) {
         degradedSteps.removeIf(d -> Objects.equals(d.step(), step));
         degradedSteps.add(new DegradedStep(step, reason));
-        listingTouched = true;
+        degradedTouched = true;
     }
 
     /**
@@ -201,7 +213,7 @@ public final class ContentWorkingSet {
      */
     public void clearDegradedStep(String step) {
         if (degradedSteps.removeIf(d -> Objects.equals(d.step(), step))) {
-            listingTouched = true;
+            degradedTouched = true;
         }
     }
 
@@ -222,7 +234,7 @@ public final class ContentWorkingSet {
         }
 
         Listing newListing = listing;
-        if (listingTouched) {
+        if (listingAiTouched || degradedTouched) {
             newListing = new Listing(listing.listingId(), listing.spuId(), listing.channelId(),
                     titleOverrides.isEmpty() ? listing.titleOverrides() : Map.copyOf(titleOverrides),
                     descriptionOverrides.isEmpty() ? listing.descriptionOverrides()
@@ -230,7 +242,7 @@ public final class ContentWorkingSet {
                     listing.locales(), listing.platformCategory(), listing.platformAttributes(),
                     listing.specMappings(), List.copyOf(skuSet),
                     listing.images(), List.copyOf(degradedSteps),
-                    touched(listing.provenance(), updatedAtIso));
+                    listingAiTouched ? touched(listing.provenance(), updatedAtIso) : listing.provenance());
         }
 
         List<MediaAsset> newMedia = new ArrayList<>();
