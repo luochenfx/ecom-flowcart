@@ -126,7 +126,8 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
   - [ ] `content`（[#20](https://github.com/luochenfx/ecom-flowcart/issues/20)）：内容链 + 首批 AI Step（翻译回填 / 改写 / 价格）
   - [ ] `publish`（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）：铺货 workflow（含 reconcile seam）
   - [ ] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)）：同步（轮询 + webhook 信号）→ 采购单 → 物流
-  - [ ] 首个平台 Adapter（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，1688 优先实测）落地双向 fixture 门槛
+  - [x] （[#23](https://github.com/luochenfx/ecom-flowcart/issues/23) 前置，非 slice）货源侧采购契约补齐（[#35](https://github.com/luochenfx/ecom-flowcart/issues/35)，已合入 [PR #38](https://github.com/luochenfx/ecom-flowcart/pull/38)）：`OfferSku.sourceSpecId` / `PurchaseDraftItem.sourceOfferId` / `PurchaseCapability.cancelPurchase` + `payPurchase`，并在 `specs/0005` 新增 §9.1 1688 侧逐项能力映射表
+  - [ ] 首个平台 Adapter（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，1688 优先实测）落地双向 fixture 门槛（契约前置 [#35](https://github.com/luochenfx/ecom-flowcart/issues/35) 已完成，阻塞解除）
 - [ ] 开源发布准备（[#24](https://github.com/luochenfx/ecom-flowcart/issues/24)：README 完善 / 示例数据 / 贡献指南）
 
 ## License
