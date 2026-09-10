@@ -19,3 +19,4 @@
 - workflow 层失败决策零翻译：RetryPolicy ← `RETRYABLE`、Saga ← `NON_RETRYABLE`、reconcile ← `AMBIGUOUS`，限流由 Adapter 自排队吸收，core 无平台参数。
 - 无真实账号的测试基线成立：双向 fixture 是"贡献者承诺的映射语义"，错误映射测试验证三类翻译正确性——PR 门槛不依赖平台账号可及性。
 - 认证安全基线：明文 token 不进接口不进日志；凭据状态（EXPIRED）驱动人工刷新看板；OAuth 平台的自刷新不阻塞人工 token 平台。
+- **能力归属侧别纠偏（2026-09-10，随 #23 实现前评估）**：`ShipmentCapability` 的语义是「供应商物流单号 → **销售平台**」——`notifyShipment(ShipmentNotification{platform_order_no, tracking_company, tracking_no, tracking_url})` 携带的是**销售平台订单号**，故它**只属于销售平台侧 Adapter**（淘宝 / 拼多多 / 速卖通），**货源侧（1688）不实现**；1688 侧物流信息由 `PurchaseCapability.fetchLogistics` 承担。原表述「Capability 接口族（可部分实现）——Publish / OrderSync / Address / Shipment / Rma / OfferFetch / Purchase / Auth」只枚举了家族成员、未标注归属侧别，易被误读为任一 Adapter 均可挂载 Shipment。落点：本 ADR（归属侧别）+ issue #23（能力清单与 AC）同步更正；接口语义定义见[规范 0005](../specs/0005-adapter-plugin-contract.md) §2。

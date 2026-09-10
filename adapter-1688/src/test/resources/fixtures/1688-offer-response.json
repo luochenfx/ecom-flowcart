@@ -19,17 +19,17 @@
     "skuInfo": {
       "specs": [
         {
-          "specId": "spec-1",
+          "specId": "f2c0f9c1a4b34d8e9f7a6b5c4d3e2f10",
           "name": "颜色",
           "values": [
-            { "valueId": "v-1", "name": "黑色" },
-            { "valueId": "v-2", "name": "白色" }
+            { "valueId": "1a2b3c4d5e6f708192a3b4c5d6e7f801", "name": "黑色" },
+            { "valueId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name": "白色" }
           ]
         }
       ],
       "skuMap": {
-        "颜色:黑色": { "skuId": "523681097354", "specId": "spec-1", "price": 45.9, "stock": 120 },
-        "颜色:白色": { "skuId": "523681097355", "specId": "spec-1", "price": 45.9, "stock": 80 }
+        "颜色:黑色": { "skuId": "523681097354", "specId": "b266e0726506185beaf205cbae88530d", "price": 45.9, "stock": 120 },
+        "颜色:白色": { "skuId": "523681097355", "specId": "2ba3d63866a71fbae83909d9b4814f01", "price": 45.9, "stock": 80 }
       }
     }
   },

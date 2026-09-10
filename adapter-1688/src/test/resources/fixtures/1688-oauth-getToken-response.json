@@ -1,0 +1,8 @@
+{
+  "access_token": "new-access-token",
+  "refresh_token": "new-refresh-token",
+  "expires_in": "36000",
+  "aliId": "1234567",
+  "resource_owner": "buyer-001",
+  "memberId": "b2b-1234567"
+}

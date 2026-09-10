@@ -43,6 +43,10 @@ class Ali1688OfferJsonMapperTest {
         assertThat(offer.skus()).hasSize(2);
         OfferData.OfferSku black = offer.skus().get(0);
         assertThat(black.sourceSkuId()).isEqualTo("523681097354");
+        // 1688 下单键 specId（#23）：取 skuMap 条目自身的 specId，逐 SKU 不同
+        assertThat(black.sourceSpecId()).isEqualTo("b266e0726506185beaf205cbae88530d");
+        assertThat(offer.skus().get(1).sourceSpecId())
+                .isEqualTo("2ba3d63866a71fbae83909d9b4814f01");
         assertThat(black.specText()).isEqualTo("颜色:黑色");
         assertThat(black.specs()).containsExactly(new SpecValue("颜色", "黑色"));
         assertThat(black.price()).isEqualTo(new Money("45.9", "CNY"));

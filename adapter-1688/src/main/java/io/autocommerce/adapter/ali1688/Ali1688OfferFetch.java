@@ -8,11 +8,9 @@ import io.autocommerce.core.contract.dto.OfferData;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 /**
@@ -57,8 +55,9 @@ public final class Ali1688OfferFetch implements OfferFetchCapability {
 
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(formBody(Map.of("productId", externalId))))
+                .header("Content-Type", Ali1688Http.FORM_CONTENT_TYPE)
+                .POST(HttpRequest.BodyPublishers
+                        .ofString(Ali1688Http.formBody(Map.of("productId", externalId))))
                 .build();
 
         HttpResponse<String> response;
@@ -75,7 +74,7 @@ public final class Ali1688OfferFetch implements OfferFetchCapability {
         if (status == 429 || status >= 500) {
             throw AdapterException.retryable(Integer.toString(status),
                     "1688 网关临时故障/限流（HTTP " + status + "）",
-                    retryAfter(response));
+                    Ali1688Http.retryAfter(response));
         }
         if (status < 200 || status >= 300) {
             throw AdapterException.nonRetryable(Integer.toString(status),
@@ -84,30 +83,4 @@ public final class Ali1688OfferFetch implements OfferFetchCapability {
         return mapper.map(response.body());
     }
 
-    /** 解析标准 HTTP Retry-After 头（delta-seconds）→ 退避窗口（specs/0005 §6）；缺失/非法 → null。 */
-    private static Duration retryAfter(HttpResponse<String> response) {
-        String value = response.headers().firstValue("Retry-After").orElse(null);
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Duration.ofSeconds(Long.parseLong(value.trim()));
-        } catch (NumberFormatException e) {
-            // HTTP-date 形态（RFC 9110 §10.2.3）极少见；真实网关实测见 #23，届时按需补解析
-            return null;
-        }
-    }
-
-    private static String formBody(Map<String, String> params) {
-        StringBuilder sb = new StringBuilder();
-        params.forEach((k, v) -> {
-            if (!sb.isEmpty()) {
-                sb.append('&');
-            }
-            sb.append(URLEncoder.encode(k, StandardCharsets.UTF_8))
-                    .append('=')
-                    .append(URLEncoder.encode(v, StandardCharsets.UTF_8));
-        });
-        return sb.toString();
-    }
 }

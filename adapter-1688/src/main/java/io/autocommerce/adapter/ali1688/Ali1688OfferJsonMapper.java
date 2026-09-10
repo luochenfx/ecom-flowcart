@@ -75,14 +75,14 @@ public final class Ali1688OfferJsonMapper {
         if (!offer.isObject()) {
             throw AdapterException.nonRetryable("bad-offer", "offer 响应非 JSON 对象");
         }
-        String externalId = text(offer, "productId");
+        String externalId = Ali1688Json.text(offer, "productId");
         if (externalId == null || externalId.isBlank()) {
             throw AdapterException.nonRetryable("missing-product-id", "offer 缺少 productId");
         }
-        String title = text(offer, "subject");
+        String title = Ali1688Json.text(offer, "subject");
 
         List<String> imageUrls = new ArrayList<>();
-        String mainImage = text(offer, "imageUrl");
+        String mainImage = Ali1688Json.text(offer, "imageUrl");
         if (mainImage != null && !mainImage.isBlank()) {
             imageUrls.add(mainImage);
         }
@@ -101,9 +101,15 @@ public final class Ali1688OfferJsonMapper {
      * skuInfo.skuMap → OfferSku 列表。skuMap key = 规格组合键原文（如 "颜色:黑色"），
      * entry = {skuId, specId, price, stock}。skuMap 缺失/空 → 空列表（上游异常形态留 raw）。
      *
-     * <p>entry 的 {@code specId} <b>暂不映射</b>（sourceSpecId 传 null）：其语义存疑（本仓 fixture 里两条
-     * 不同 SKU 的 specId 取值相同，实为规格维度的 id），采集侧填充属 #23——届时用真实响应校准后决定
-     * 取哪个字段。现在透传会把未验证的语义固化进 fixture。
+     * <p><b>sourceSpecId 值侧来源</b>（#23 落地）：主路径读 skuMap 条目自身的 {@code specId}
+     * ——官方 apidoc 的 {@code cargoParamList[]} 示例即 {@code {"specId":"b266e0726506185beaf205cbae88530d"}}
+     * （32 位十六进制串），与 skuMap 条目的 specId 同形，故该字段才是<b>逐 SKU 的下单键</b>。
+     * 条目缺 specId 时退到 {@link #assembleFromValueIds}（按 {@code skuInfo.specs} 维度顺序取
+     * {@code values[].valueId}）。
+     *
+     * <p>注意 {@code skuInfo.specs[].specId} 是<b>规格维度的 id</b>（如"颜色"这一个维度），
+     * 不是逐 SKU 的下单键——本仓旧 fixture 把两者写成同值即由此误读而来，已校正为
+     * 「skuMap 条目 specId 逐 SKU 不同 + 维度 specId 另值」的 32-hex 形态。
      */
     private List<OfferData.OfferSku> mapSkus(JsonNode skuInfo) {
         List<OfferData.OfferSku> skus = new ArrayList<>();
@@ -115,14 +121,84 @@ public final class Ali1688OfferJsonMapper {
         while (keys.hasNext()) {
             String specText = keys.next();
             JsonNode entry = skuMap.get(specText);
-            String sourceSkuId = text(entry, "skuId");
+            String sourceSkuId = Ali1688Json.text(entry, "skuId");
+            String sourceSpecId = resolveSourceSpecId(entry, skuInfo, specText);
             JsonNode priceNode = entry.path("price");
             Money price = priceNode.isNumber()
                     ? new Money(formatAmount(priceNode), CURRENCY_CNY)
                     : null;
-            skus.add(new OfferData.OfferSku(sourceSkuId, null, specText, parseSpecText(specText), price));
+            skus.add(new OfferData.OfferSku(sourceSkuId, sourceSpecId, specText,
+                    parseSpecText(specText), price));
         }
         return skus;
+    }
+
+    /**
+     * 1688 下单键 {@code specId} 的取值（#23）：① skuMap 条目自带 {@code specId} → 直接用；
+     * ② 否则按 {@code skuInfo.specs} 的维度顺序，取每个维度中与 {@code specText} 匹配的
+     * {@code values[].valueId}，以 {@code ;} 连接。
+     *
+     * <p><b>② 的形态未经真实响应验证</b>：单一维度时它退化为「该维度值 id」，多维度组合是否
+     * 真以 {@code ;} 连接属未知（官方文档只给了 skuMap 形态的 32-hex 单串）。真实沙箱校准后
+     * 若 1688 无此组装形态，应改为不填充（让下单在缺必填项处显式失败），而不是固化本猜测。
+     * 两条路径都拿不到 → null，由 {@code PurchaseDraftItem} 构造侧按必填缺口报错。
+     */
+    static String resolveSourceSpecId(JsonNode skuMapEntry, JsonNode skuInfo, String specText) {
+        String direct = Ali1688Json.text(skuMapEntry, "specId");
+        if (direct != null && !direct.isBlank()) {
+            return direct;
+        }
+        return assembleFromValueIds(skuInfo, specText);
+    }
+
+    /** 按 {@code skuInfo.specs} 维度顺序，把 specText 里各维度的值映射成 {@code values[].valueId} 并连接。 */
+    private static String assembleFromValueIds(JsonNode skuInfo, String specText) {
+        JsonNode specs = skuInfo.path("specs");
+        if (!specs.isArray() || specText == null || specText.isBlank()) {
+            return null;
+        }
+        List<SpecValue> parsed = parseSpecText(specText);
+        List<String> valueIds = new ArrayList<>();
+        for (JsonNode dimension : specs) {
+            String dimensionName = Ali1688Json.text(dimension, "name");
+            String matchedValue = valueOf(parsed, dimensionName);
+            if (matchedValue == null) {
+                continue;
+            }
+            String valueId = valueIdOf(dimension.path("values"), matchedValue);
+            if (valueId != null) {
+                valueIds.add(valueId);
+            }
+        }
+        return valueIds.isEmpty() ? null : String.join(";", valueIds);
+    }
+
+    /** 从"规格维度名 → 规格值"解析结果里取值；维度名缺失/未命中 → null。 */
+    private static String valueOf(List<SpecValue> parsed, String dimensionName) {
+        if (dimensionName == null) {
+            return null;
+        }
+        return parsed.stream()
+                .filter(spec -> dimensionName.equals(spec.name()))
+                .map(SpecValue::value)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 在 dimensions 的 values[] 中按 name 找 valueId；未命中 → null。 */
+    private static String valueIdOf(JsonNode values, String valueName) {
+        if (!values.isArray()) {
+            return null;
+        }
+        for (JsonNode value : values) {
+            if (valueName.equals(Ali1688Json.text(value, "name"))) {
+                String valueId = Ali1688Json.text(value, "valueId");
+                if (valueId != null && !valueId.isBlank()) {
+                    return valueId;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -150,11 +226,11 @@ public final class Ali1688OfferJsonMapper {
 
     /** 1688 categoryId/categoryName（可选；字段名 #23 实测校准）。 */
     private List<CategoryRef> mapCategories(JsonNode offer) {
-        String categoryId = text(offer, "categoryId");
+        String categoryId = Ali1688Json.text(offer, "categoryId");
         if (categoryId == null || categoryId.isBlank()) {
             return List.of();
         }
-        String label = text(offer, "categoryName");
+        String label = Ali1688Json.text(offer, "categoryName");
         return List.of(new CategoryRef("1688", categoryId, label));
     }
 
@@ -166,7 +242,7 @@ public final class Ali1688OfferJsonMapper {
         }
         List<Attribute> result = new ArrayList<>();
         for (JsonNode attr : attributes) {
-            String key = text(attr, "name");
+            String key = Ali1688Json.text(attr, "name");
             if (key == null || key.isBlank()) {
                 continue;
             }
@@ -174,14 +250,9 @@ public final class Ali1688OfferJsonMapper {
             if (value == null || !value.isValueNode()) {
                 continue;
             }
-            result.add(new Attribute(key, value, text(attr, "unit")));
+            result.add(new Attribute(key, value, Ali1688Json.text(attr, "unit")));
         }
         return result;
-    }
-
-    private static String text(JsonNode node, String field) {
-        JsonNode value = node.path(field);
-        return value.isValueNode() ? value.asText() : null;
     }
 
     /** 金额：decimal 数值去除尾零后的可读字符串（45.90 → "45.9"），避免浮点文本噪音。 */
