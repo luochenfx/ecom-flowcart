@@ -51,9 +51,9 @@ public final class ContentDocs {
                 "2026-09-10T08:00:00Z", "2026-09-10T08:00:00Z");
         List<Sku> skus = List.of(
                 new Sku("sku-1688-6688990011-1", SPU_ID, List.of(new SpecValue("color", "black")),
-                        new Money("45.90", "CNY"), null, null, "1", capture),
+                        new Money("45.90", "CNY"), null, null, "1", null, capture),
                 new Sku("sku-1688-6688990011-2", SPU_ID, List.of(new SpecValue("color", "white")),
-                        new Money("52.00", "CNY"), null, null, "2", capture));
+                        new Money("52.00", "CNY"), null, null, "2", null, capture));
         List<MediaAsset> media = List.of(
                 new MediaAsset("media-1688-6688990011-0", "http://localhost:1/main.jpg", null,
                         MediaRole.MAIN, ProcessingState.RAW, null, null, null, capture),
