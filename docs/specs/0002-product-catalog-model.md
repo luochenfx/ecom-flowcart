@@ -33,7 +33,9 @@ SKU (master 规格变体)
 ├── specs[]: SpecValue                         # 结构化规格（canonical 语义）
 ├── cost_price: Money                          # 成本价（我方）
 ├── barcode / images[]（变体图，可选）
-└── source_sku_id: string                      # 1688 skuMap 原始 skuId
+├── source_sku_id: string                      # 1688 skuMap 原始 skuId（规格组合内部 ID）
+└── source_spec_id?: string                     # 1688 规格下单键（skuMap 条目 specId，32-hex）
+                                               # 不是 source_sku_id：cargoParamList[].specId 逐行必填（#35/#39/#23）
 
 Listing (平台特化铺货内容，一 Listing ↔ 一 execution，对齐 #11)
 ├── title_overrides / description_overrides: Map<locale,string>  # 平台改写（AI/人工）

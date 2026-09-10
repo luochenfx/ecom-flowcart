@@ -120,23 +120,36 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 
 ## 9. 遗留 fog（实现期回填）
 
-### 9.1 1688 侧逐项能力映射（#35 回填；端点/参数待 #23 实测校准）
+### 9.1 1688 侧逐项能力映射（#35 回填；#23 按官方 apidoc 校准端点 / 参数 / 签名）
 
 | Capability | 方法 | 1688 端点 | 关键参数 / 约束 | 状态 |
 |---|---|---|---|---|
 | `OfferFetchCapability` | `fetchOffer(SourceRef)` | `alibaba.product.get` | `productId`（form 入参）；出 SPU/SKU 规格价/图/库存 | 已实现（#19） |
-| `PurchaseCapability` | `createPurchase(PurchaseDraft)` | `alibaba.trade.fastCreateOrder` | `flow=saleproxy`（一件代发）；`cargoParamList[]{offerId, specId, quantity}`；`addressParam` 四级地址；**仅同供应商可合单，跨供应商须拆单** | 待实现（#23） |
-| `PurchaseCapability` | `payPurchase(String)` | `alibaba.trade.pay.protocolPay.preparePay`（免密代扣）；无代扣协议退收银台 `alibaba.alipay.url.get`（链接 30 分钟有效） | `platformPurchaseNo` | 待实现（#23） |
-| `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | **仅未付款可撤**；已付款须走售后退款 | 待实现（#23） |
-| `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.logistics.trace` | `platformPurchaseNo` | 待实现（#23） |
+| `PurchaseCapability` | `createPurchase(PurchaseDraft)` | `alibaba.trade.fastCreateOrder` | `flow=saleproxy`（一件代发；`general`=普通批发）；`cargoParamList`（`alibaba.trade.fast.cargo[]`：`{offerId:Long, specId:32-hex, quantity}`）；`addressParam`（`alibaba.trade.fast.address`：`provinceText/cityText/areaText/address` 传**文本名**，官方免查地址码）；官方 `outOrderId` 可作幂等键但契约未承载；**仅同供应商可合单，跨供应商须拆单** | 已实现（#23） |
+| `PurchaseCapability` | `payPurchase(String)` | `alibaba.trade.pay.protocolPay.preparePay`（免密代扣）；无代扣协议退收银台 `alibaba.alipay.url.get`（链接 30 分钟有效） | 入参 `tradeWithholdPreparePayParam={"orderId":"<platformPurchaseNo>"}`；**契约返回 void，支付链接 / 支付态无法回传**——需要回传属契约扩展（走加法） | 已实现（#23） |
+| `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | `webSite=1688` + `tradeID` + `cancelReason`（官方枚举 `buyerCancel/sellerGoodsLack/other`；契约无"原因"入参 → 固定 `other`）；**仅未付款可撤**，已付款须走售后退款 | 已实现（#23） |
+| `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.trade.getLogisticsTraceInfo.buyerView`（namespace = `com.alibaba.logistics`；需申请权限）— **更正**：原表写的 `alibaba.logistics.trace` 来自二手来源，官方 apidoc 无此接口名 | `orderId` + `webSite=1688`（可选 `logisticsId`）；出参顶层 `logisticsTrace[]{logisticsId, logisticsBillNo, logisticsSteps[]}` | 已实现（#23） |
 | `OrderSyncCapability` | `fetchOrders(SyncCursor)` / `fetchOrderDetail(String)` | `alibaba.trade.getBuyerOrderList`（增量分页）／`alibaba.trade.get.buyerView`（订单快照：金额/明细/运费/支付有效期/供应商） | 按时间或状态游标；#8「拉取为真相」单写入路径 | 待实现（#22 消费） |
-| `AuthCapability` | `refresh(CredentialView)` | OAuth2.0 换 `access_token`（约 2h 有效期） | App Key（标识）+ App Secret（签名，严禁硬编码）；签名 MD5 / HMAC-MD5，部分接口 `_aop_timestamp` + `_aop_signature`（HMAC-SHA1）——签名属平台知识，落 Adapter | 待实现（#23） |
+| `AuthCapability` | `refresh(CredentialView)` | OAuth2.0 换 `access_token`（约 2h 有效期） | 端点 `POST /auth/system.oauth2/getToken`（`grant_type=refresh_token` + `client_id/client_secret/refresh_token`）——**官方明确"调用 getToken 接口不需要签名"**，故不经 param2 签名网关；业务接口签名 = param2 `_aop_signature`（**HMAC-SHA1 大写 hex**，因子一 = `param2/1/{namespace}/{apiName}/{appKey}`，因子二 = 参数按 key 字典序 `key+value` 直连）——签名属平台知识，落 Adapter | 已实现（#23） |
 | `AddressCapability` | — | **不实现**：地址解密归销售侧凭据域（§5）；1688 侧只有辅助接口 `alibaba.trade.receiveAddress.get` / `alibaba.trade.addresscode.parse` | — | — |
 | `PublishCapability` / `ShipmentCapability` / `RmaCapability` | — | **不实现**：铺货与发货回传面向销售平台；1688 作为货源侧只被采集与采购 | — | — |
 
 - 未进契约的 1688 备用接口：`alibaba.createOrder.preview`（下单前置校验：SKU 有效性 / 库存 / 起批量 / 运费 / 区域限售）、`com.alibaba.fenxiao-crossborder/product.freight.estimate`（运费预估）——是否并入 `createPurchase` 内部步骤，待 #22/#23 定。
-- 来源：`.workbuddy/research/domestic-platforms.md` §1.4–§1.7（**二手来源，端点与参数字段名未经真实 API 实测**）；映射表的机器可读形态仍是 core 的 `OfferData` / `PurchaseDraft` / `PurchaseCapability`（见文首状态行：不为 Adapter 造伪 schema）。
-- **`specId` 载体已落地、值侧来源待校准**：`cargoParamList[]` 的 `specId` 由 `OfferData.OfferSku.sourceSpecId`（#35 落）承载，**标准模型侧承载链已打通**（#39：采集面 → master `Sku.sourceSpecId` → `PurchaseDraftItem.sourceSpecId`，schema `Sku.source_spec_id`）。但**读哪个 1688 字段得到该值仍未定**：本仓 fixture 是自造样本（两条不同 SKU 的 `specId` 取值相同、实为规格维度 id）→ 只证明字段存在、**不证明它是逐 SKU 的下单键**。**#23 用真实响应 / 1688 沙箱校准**（推荐先读 `skuInfo.skuMap` 条目 `specId`；若该字段不存在或仍是维度级 id，则按 `skuMap` key 的维度顺序组装 `skuInfo.specs[].values[].valueId`），并把 fixture 校正为**逐 SKU 取值不同的 32-hex 形态**（官方 apidoc 的 `specId` 形态即 32 位十六进制串）。
+- 来源：**交易面（下单 / 取消 / 支付 / 物流 / 换票）已由 #23 按官方 apidoc 校准**
+  （`open.1688.com/api/apidocdetail.htm?id=com.alibaba.trade:...`，一手来源：端点名 / 应用级参数 / 出参字段 / 错误码表 / Java SDK 示例）；
+  **采集面（`alibaba.product.get`）仍是二手来源**（`.workbuddy/research/domestic-platforms.md` §1.4–§1.7 + 自造 fixture），
+  `categoryId/categoryName/attributes[]` 字段名与规格组合串解析规则待真实响应校准。
+  映射表的机器可读形态仍是 core 的 `OfferData` / `PurchaseDraft` / `PurchaseCapability`（见文首状态行：不为 Adapter 造伪 schema）。
+- **`specId` 承载链已打通、值侧已按官方 apidoc 校准（#23）**：`cargoParamList[]` 的 `specId` 由
+  `OfferData.OfferSku.sourceSpecId`（#35 落）承载，标准模型侧链路完整（#39：采集面 → master
+  `Sku.sourceSpecId` → `PurchaseDraftItem.sourceSpecId`，schema `Sku.source_spec_id`）。
+  **值侧主路径 = 读 `skuInfo.skuMap` 条目自身的 `specId`**：官方 apidoc 的 `cargoParamList[]` 示例为
+  `{"specId": "b266e0726506185beaf205cbae88530d"}`（32 位十六进制串），与 skuMap 条目 `specId` 同形，
+  而 `skuInfo.specs[].specId` 是**规格维度 id**（如"颜色"这一个维度，全 SKU 同值）——两者被旧 fixture
+  混为一谈，现已把 fixture 校正为「skuMap 条目 specId 逐 SKU 不同 + 维度 specId 另值」的 32-hex 形态。
+  条目缺 `specId` 时退到按 `skuInfo.specs[].values[].valueId` 组装（`;` 连接）——**该退路的形态未经真实
+  响应验证**（官方只给了单串形态），真实沙箱若证明不存在此组装形态，应改为不填充让下单在缺必填项处
+  显式失败，而不是固化猜测。**最终确认仍待真实响应 / 1688 沙箱**。
 
 ### 9.2 其余 fog
 

@@ -1,0 +1,16 @@
+{
+  "flow": "saleproxy",
+  "cargoParamList": [
+    { "offerId": 6688990011, "specId": "b266e0726506185beaf205cbae88530d", "quantity": 2 },
+    { "offerId": 6688990011, "specId": "2ba3d63866a71fbae83909d9b4814f01", "quantity": 1 }
+  ],
+  "addressParam": {
+    "fullName": "张三",
+    "mobile": "13800000000",
+    "provinceText": "浙江省",
+    "cityText": "杭州市",
+    "areaText": "滨江区",
+    "address": "网商路699号",
+    "postCode": "310000"
+  }
+}

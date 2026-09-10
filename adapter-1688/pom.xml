@@ -60,5 +60,21 @@
       <artifactId>wiremock</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- JSON Schema 校验器（1.5.6，版本收口于根 pom dependencyManagement）：
+         core 契约校验门——采购 / 物流侧标准模型过 schemas/order.schema.json 的 $defs 校验 -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 契约测试基座（ContractObjectMapper：标准模型 ↔ 契约 JSON 的 SNAKE_CASE/NON_NULL 校核，
+         随 core-contracts test-jar 分发，Testing §1 契约门） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>
