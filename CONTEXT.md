@@ -48,6 +48,10 @@ _Avoid_: 订单版本（暗示 append-only 版本表，v1 不建——快照基�
 我方在货源平台（1688）对某供应商下达的采购请求，以 `platform_purchase_no` 唯一；一销售 Order 可拆多张（跨供应商必须拆单）。自有状态轴与 workflow，经订单行关联回销售订单。
 _Avoid_: 进货单、供应商订单、代发单（语义窄；PurchaseOrder 是销售履约链的一等环节）
 
+**外部标识符前缀（`source*` / `platform*` / `externalId`）**:
+`platform*` = 该记录**所属平台**的原始值与状态旁路，指向随记录子树变化：`Order` / `OrderLine` / `OrderRma` 指销售平台（taobao/pdd/aliexpress），`PurchaseOrder` / `SupplierRef` 指货源平台（1688）。`source*` 专用于货源侧（1688）**标识符**（`sourceSkuId` / `sourceSpecId` / `sourceOfferId` / `sourceSkuRef`），不承载状态。`externalId` = 通用上游坐标，与同记录的 `platform` 字段配对（`SourceRef.externalId`、`OfferData.externalId`）。
+_Avoid_: 把 `platform*` 读成"销售平台专属"（`PurchaseOrder.platformStatus()` 是 1688 侧原值）；用 `source*` 承载状态旁路
+
 **OrderRMA（售后单）**:
 挂在 Order 下的售后/退款/纠纷统一子实体，`type = REFUND | DISPUTE`（国内退款入口 / 跨境纠纷入口）；自有状态轴与 workflow。订单履约轴的 REFUNDING/DISPUTED 只是由它派生的标记。
 _Avoid_: 退款单、纠纷单（分实体是平台视角；我方收敛为单一售后实体两种入口）
