@@ -46,9 +46,9 @@ class OfferCatalogMapperTest {
                 List.of("https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000001.jpg",
                         "https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000002.jpg"),
                 List.of(
-                        new OfferData.OfferSku("523681097354", "颜色:黑色",
+                        new OfferData.OfferSku("523681097354", null, "颜色:黑色",
                                 List.of(new SpecValue("颜色", "黑色")), new Money("45.9", "CNY")),
-                        new OfferData.OfferSku("523681097355", "颜色:白色",
+                        new OfferData.OfferSku("523681097355", null, "颜色:白色",
                                 List.of(new SpecValue("颜色", "白色")), new Money("45.9", "CNY"))),
                 List.of(new CategoryRef("1688", "1601", "数码/影音/音箱")),
                 List.of(new Attribute("电池容量", MAPPER.getNodeFactory().textNode("1200mAh"), "mAh"),
@@ -106,7 +106,7 @@ class OfferCatalogMapperTest {
     @Test
     void sameInputProducesIdenticalDocument() {
         OfferData data = new OfferData("6688990011", "标题", List.of("https://img/a.jpg"),
-                List.of(new OfferData.OfferSku("s1", "颜色:红",
+                List.of(new OfferData.OfferSku("s1", null, "颜色:红",
                         List.of(new SpecValue("颜色", "红")), new Money("10", "CNY"))),
                 List.of(), List.of(),
                 MAPPER.createObjectNode().put("status", "published"));

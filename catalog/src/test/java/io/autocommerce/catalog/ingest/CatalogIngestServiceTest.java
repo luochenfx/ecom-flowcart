@@ -120,8 +120,8 @@ class CatalogIngestServiceTest {
                 "便携蓝牙音箱 迷你无线低音炮 户外防水",
                 List.of("https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000001.jpg"),
                 List.of(
-                        new OfferData.OfferSku("523681097354", "颜色:黑色", List.of(), price),
-                        new OfferData.OfferSku("523681097355", "颜色:白色", List.of(), price)),
+                        new OfferData.OfferSku("523681097354", null, "颜色:黑色", List.of(), price),
+                        new OfferData.OfferSku("523681097355", null, "颜色:白色", List.of(), price)),
                 List.of(), List.of(), null);
     }
 }

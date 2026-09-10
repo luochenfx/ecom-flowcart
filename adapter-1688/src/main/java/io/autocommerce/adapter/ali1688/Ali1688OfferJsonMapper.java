@@ -100,6 +100,10 @@ public final class Ali1688OfferJsonMapper {
     /**
      * skuInfo.skuMap → OfferSku 列表。skuMap key = 规格组合键原文（如 "颜色:黑色"），
      * entry = {skuId, specId, price, stock}。skuMap 缺失/空 → 空列表（上游异常形态留 raw）。
+     *
+     * <p>entry 的 {@code specId} <b>暂不映射</b>（sourceSpecId 传 null）：其语义存疑（本仓 fixture 里两条
+     * 不同 SKU 的 specId 取值相同，实为规格维度的 id），采集侧填充属 #23——届时用真实响应校准后决定
+     * 取哪个字段。现在透传会把未验证的语义固化进 fixture。
      */
     private List<OfferData.OfferSku> mapSkus(JsonNode skuInfo) {
         List<OfferData.OfferSku> skus = new ArrayList<>();
@@ -116,7 +120,7 @@ public final class Ali1688OfferJsonMapper {
             Money price = priceNode.isNumber()
                     ? new Money(formatAmount(priceNode), CURRENCY_CNY)
                     : null;
-            skus.add(new OfferData.OfferSku(sourceSkuId, specText, parseSpecText(specText), price));
+            skus.add(new OfferData.OfferSku(sourceSkuId, null, specText, parseSpecText(specText), price));
         }
         return skus;
     }
