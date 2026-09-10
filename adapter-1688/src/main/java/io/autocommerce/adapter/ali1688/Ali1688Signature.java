@@ -1,5 +1,7 @@
 package io.autocommerce.adapter.ali1688;
 
+import io.autocommerce.core.contract.AdapterException;
+
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -61,8 +63,11 @@ final class Ali1688Signature {
             return HexFormat.of().withUpperCase()
                     .formatHex(mac.doFinal(factor.toString().getBytes(StandardCharsets.UTF_8)));
         } catch (GeneralSecurityException e) {
-            // JDK 必然内置 HmacSHA1——走到这里说明运行环境异常（非平台错误，也非调用方可恢复）
-            throw new IllegalStateException("HmacSHA1 不可用（JDK 配置异常）", e);
+            // JDK 必然内置 HmacSHA1——走到这里说明运行环境异常（非平台错误，也非调用方可恢复）。
+            // ADR-0007 / specs-0005 §6：能力接口只抛 AdapterException，抛别的 = bug。
+            // 归 NON_RETRYABLE：JDK 算法不可用重试无意义，须人工介入。
+            throw AdapterException.nonRetryable("sign-failure",
+                    "HmacSHA1 不可用（JDK 配置异常）: " + e.getMessage());
         }
     }
 }

@@ -11,10 +11,14 @@ import io.autocommerce.core.contract.dto.PurchaseResult;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
@@ -56,6 +60,9 @@ class Ali1688PurchaseTest {
     private static final String CASE_BUSINESS_ERROR = "case-business-error";
     private static final String CASE_PLATFORM_ERROR = "case-platform-error";
     private static final String CASE_CONNECTION_RESET = "case-connection-reset";
+    private static final String CASE_SERVICE_UNAVAILABLE = "case-service-unavailable";
+    private static final String CASE_TP_EXCEPTION = "case-tp-exception";
+    private static final String CASE_TOO_MANY_REQUESTS = "case-too-many-requests";
 
     private static WireMockServer server;
     private static Ali1688Purchase purchase;
@@ -92,6 +99,22 @@ class Ali1688PurchaseTest {
                             + "\"message\":\"view order service error\"}"));
             stub(path, CASE_CONNECTION_RESET, aResponse().withFault(Fault.EMPTY_RESPONSE));
         }
+
+        // —— classify() 识别但 README 此前漏列的三项：SERVICE_UNAVAILABLE / TP_EXCEPTION /
+        // TOO_MANY_REQUESTS 也属平台侧临时故障 → RETRYABLE（与 500* / *SYSTEM_ERROR 同档）。
+        // 用 case 名经 cargoParamList.specId 分流，参数化测试逐一断言。 ——
+        stub(CREATE_PATH, CASE_SERVICE_UNAVAILABLE, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"SERVICE_UNAVAILABLE\","
+                        + "\"message\":\"service is temporarily unavailable\"}"));
+        stub(CREATE_PATH, CASE_TP_EXCEPTION, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"TP_EXCEPTION\","
+                        + "\"message\":\"third-party service exception\"}"));
+        stub(CREATE_PATH, CASE_TOO_MANY_REQUESTS, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"TOO_MANY_REQUESTS\","
+                        + "\"message\":\"too many requests\"}"));
 
         purchase = newPurchase();
     }
@@ -142,15 +165,29 @@ class Ali1688PurchaseTest {
                 });
     }
 
-    @Test
-    void platformSideErrorCodeIsRetryable() {
-        // 官方错误码 500 / SYSTEM_ERROR 属平台侧临时故障 → RETRYABLE（不是业务拒绝）
-        assertThatThrownBy(() -> purchase.createPurchase(
-                        Ali1688TradeSamples.draft(CASE_PLATFORM_ERROR)))
+    /**
+     * 官方错误码平台侧临时故障 → RETRYABLE（不是业务拒绝）。
+     * 涵盖 {@code 500*} / {@code *SYSTEM_ERROR*}（含 {@code SYSTEM_BUSY}）以及 README 漏列后补齐的
+     * {@code SERVICE_UNAVAILABLE} / {@code TP_EXCEPTION} / {@code TOO_MANY_REQUESTS}——
+     * 一并由 {@code Ali1688Gateway.classify()} 识别为 RETRYABLE。参数化钉齐代码 ↔ 文档 ↔ 测试，
+     * PR #42 review 前 {@code 500} 单独一个测试、其余三项完全无覆盖。
+     */
+    @ParameterizedTest
+    @MethodSource("platformSideErrorCodes")
+    void platformSideErrorCodesAreRetryable(String caseId, String expectedCode) {
+        assertThatThrownBy(() -> purchase.createPurchase(Ali1688TradeSamples.draft(caseId)))
                 .isInstanceOfSatisfying(AdapterException.class, e -> {
                     assertThat(e.kind()).isEqualTo(AdapterErrorKind.RETRYABLE);
-                    assertThat(e.platformCode()).isEqualTo("500");
+                    assertThat(e.platformCode()).isEqualTo(expectedCode);
                 });
+    }
+
+    private static Stream<Arguments> platformSideErrorCodes() {
+        return Stream.of(
+                Arguments.of(CASE_PLATFORM_ERROR, "500"),
+                Arguments.of(CASE_SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE"),
+                Arguments.of(CASE_TP_EXCEPTION, "TP_EXCEPTION"),
+                Arguments.of(CASE_TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS"));
     }
 
     @Test

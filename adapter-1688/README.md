@@ -104,7 +104,7 @@ PurchaseCapability purchase = new Ali1688AdapterProvider(config)
 | HTTP 429 / 5xx | `RETRYABLE` | 带 `Retry-After` 头时写入 `retryableAfter` |
 | HTTP 其余 4xx | `NON_RETRYABLE` | `platformCode` = HTTP 状态码 |
 | 业务拒绝 `success=false` | `NON_RETRYABLE` | `platformCode` = 官方错误码（`400*`、`FAIL_BIZ_*`…） |
-| 官方错误码 `500*` / `*SYSTEM_ERROR*` / `*SYSTEM_BUSY*` / `*ACCESS_LIMIT*` / `*FLOW_LIMIT*` / `*QPS*` | `RETRYABLE` | 平台侧临时故障，不是业务拒绝。**口径刻意收窄**：业务码也常带 `LIMIT`（起批量 / 最大购买量），宽泛匹配会把业务拒绝误判成抖动而重试到死 |
+| 官方错误码 `500*` / `*SYSTEM_ERROR*` / `*SYSTEM_BUSY*` / `*SERVICE_UNAVAILABLE*` / `*TP_EXCEPTION*` / `*ACCESS_LIMIT*` / `*FLOW_LIMIT*` / `*QPS*` / `*TOO_MANY_REQUESTS*` | `RETRYABLE` | 平台侧临时故障，不是业务拒绝。**口径刻意收窄**：业务码也常带 `LIMIT`（起批量 / 最大购买量），宽泛匹配会把业务拒绝误判成抖动而重试到死。`SERVICE_UNAVAILABLE` / `TP_EXCEPTION` / `TOO_MANY_REQUESTS` 与 `500*` / `*SYSTEM_ERROR` 同档，由 `Ali1688Gateway.classify()` 一并识别（substring 匹配，大小写无关） |
 | **写操作**超时 / 连接断开 | `AMBIGUOUS` | 请求可能在途 → **不重发**，触发 reconcile |
 | **读操作**超时 / 连接断开 | `RETRYABLE` | 重试安全（不属 AMBIGUOUS） |
 | 缺凭据 / 缺必填字段 / 响应非法 | `NON_RETRYABLE` | 配置或代码问题，重试无意义 |
