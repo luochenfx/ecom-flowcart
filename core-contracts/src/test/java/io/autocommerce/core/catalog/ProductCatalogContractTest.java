@@ -81,6 +81,10 @@ class ProductCatalogContractTest {
         // catalog Money.amount 为 decimal string
         assertThat(listing.skuSet().get(0).price().amount()).isEqualTo("79.00");
         assertThat(listing.images().get(0).platformMediaId()).isEqualTo("tb-media-9001");
+        // degraded_steps（#20 内容链降级留痕，specs/0006 §5/§6）：Step id + 原因
+        assertThat(listing.degradedSteps()).hasSize(1);
+        assertThat(listing.degradedSteps().get(0).step()).isEqualTo("title.rewrite");
+        assertThat(listing.degradedSteps().get(0).reason()).isNotBlank();
         assertThat(listing.provenance().createdByStep())
                 .isEqualTo(io.autocommerce.core.catalog.model.ProvenanceStep.LISTING);
 

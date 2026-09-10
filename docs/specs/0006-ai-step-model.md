@@ -2,7 +2,7 @@
 
 > 来源：[Grilling: AI Step 可插拔抽象与多模型后端](https://github.com/luochenfx/ecom-flowcart/issues/12)（Part of #1）
 > 依赖：[ADR-0004/#7（商品模型）](../adr/0004-product-catalog-model.md)（AI 产物锚点：改写稿→Listing、翻译→canonical i18n、图片→MediaAsset）、[ADR-0003/#11（铺货 workflow 只读 Listing）](../adr/0003-listing-idempotency-via-deterministic-workflow-id.md)、[ADR-0002/#13（有状态链进 Temporal）](../adr/0002-temporal-for-workflow-orchestration.md)、[ADR-0007/#9（Adapter 插件机制哲学）](../adr/0007-adapter-plugin-contract.md)（SPI/无中央注册表同源）。
-> 状态：v1 设计期决议。契约的机器可读形态 = **Java 接口**（`Step` / `LLMProvider` / `MediaProcessor` / 模型解析点 seam，代码级，非数据/消息 payload），签名随本规范落盘、实现期落 core `step` 包；`schemas/` 目录保留给数据/消息契约（与 #9 同决策），不为 Step 造伪 schema。Listing 新字段（`degraded_steps` 等）实现期并入 product-catalog schema。
+> 状态：v1 设计期决议。契约的机器可读形态 = **Java 接口**（`Step` / `LLMProvider` / `MediaProcessor` / 模型解析点 seam，代码级，非数据/消息 payload），签名随本规范落盘、实现期落 core `step` 包；`schemas/` 目录保留给数据/消息契约（与 #9 同决策），不为 Step 造伪 schema。Listing 新字段（`degraded_steps` 等）**已随 #20 并入 product-catalog schema**（Java 侧 `Listing.degradedSteps` + `DegradedStep`，schema 侧 `$defs/DegradedStep`）。
 
 ## 1. 决策概览
 
@@ -130,6 +130,28 @@ interface ModelResolver {
 
 ## 10. 遗留 fog（实现期回填）
 
-- Step 参数 schema 的具体形态（JsonSchema 引用还是 Java bean 注解）——实现期定。
-- LLM 调用超时/重试的具体档位（`ScheduleToCloseTimeout` 值）——随内容链 workflow 实现微调。
-- token 估算方法（按字符/模型 tokenizer）——实现期定，v1 粗估即可。
+- ~~Step 参数 schema 的具体形态~~ → **已回填（#20）**：v1 = Jackson `JsonNode`（`StepDescriptor.params()`），配**显式字段路径白名单**（`ListingStepContext`：`spu.titles` / `spu.descriptions` / `spu.skus` / `listing.title_overrides` / `listing.description_overrides` / `listing.locales` / `listing.sku_set` / `media`）。越界路径立即 `IllegalArgumentException`，不静默返回 null——契约面小才可审计。不引 JsonSchema 引用 / Java bean 注解。
+- ~~LLM 调用超时 / 重试档位~~ → **已回填（#20）**：activity 侧 `StartToCloseTimeout=2min`、`RetryOptions.maximumAttempts=1`。**单次尝试是有意的**：硬依赖失败要让内容链 failed 走重放 / 告警，而不是占着 workflow 槽位无限退避；要吃掉瞬时抖动就在 `ContentActivityOptions` 一处调大 attempts，Step 与 workflow 都不动。
+- ~~token 估算方法~~ → **已回填（#20）**：**不本地估算**，直接用 provider 回报的 `usage`（`ChatUsage` → `ContentStepRun.totalTokens()`）。provider 未回报 usage 时为 null（诚实缺省，不假装有数）。
+- 单价 / 成本折算（token → 金额）仍**未定**：v1 无计费系统，只落 token 用量供看板聚合；接入真实单价表时在 `ContentStepRun` 之外另立，不改 Step 契约。
+- **内容链幂等策略 vs「人工重新生成内容」触发（#20 实现时暴露，待决）**：§9 已定内容链沿用 #11 的 `WorkflowIdReusePolicy = AllowDuplicateFailedOnly`。#20 实测其字面后果：**一个「跑完但降级」的 Listing（`degraded_steps` 非空、workflow 仍为 completed）无法用同一 workflowId 重新生成内容**——它命中"前一次 completed → 拒绝新 run"（幂等复用，返回既有 execution 结果）。而 §2 把"人工重新生成内容"列为内容链的**合法触发源**。二者冲突，须在拥有该触发源的 slice（`api` 触发面 / #21）上收敛，二选一：
+  - **A（保持现状，保守）**：接受缺口——重跑仅限 failed；"重新生成内容"需另设 workflowId 口径（如在 id 里带 generation 计数），代价是这条路要新建编排入口。
+  - **B（放开终结后重跑）**：改 `WorkflowIdConflictPolicy = FAIL` + `WorkflowIdReusePolicy = ALLOW_DUPLICATE`——仍拒**并发**重复，但放行**终结后**重跑。代价：同一 Listing 的**连续误触**（相隔较久的第二次误触发）会真的再烧一次 token。
+  - ⚠️ 本票（#20）按已文档化的 A 实现，**未擅自放宽**；B 属回归本行时必须显式改 `ContentWorkflowLauncher.optionsFor` 一处。
+
+## 11. 实现落点（#20，只记位置不重述语义）
+
+| 关注点 | 落点 |
+|---|---|
+| 单步失败语义（降级 vs 硬失败，唯一判定点） | `content` `ContentStepExecutor` |
+| 进程内顺序编排（测试 / demo / 非 Temporal 调用方） | `content` `ContentChainService` |
+| 首批 5 Step 实现 + SPI 声明（无参构造即生产默认装配） | `content` `ai/` + `spi/ContentAiStepProvider`（`META-INF/services`） |
+| LLMProvider SPI + OpenAI-compatible HTTP 直连 | `content` `provider/OpenAICompatProvider`（`base_url` / `api_key` / `model` / `timeout_seconds`） |
+| ModelResolver seam（v1 静态映射） | `content` `resolver/StaticModelResolver` |
+| 单稿制物化 + provenance 盖章 + degraded 留痕 | `content` `model/ContentWorkingSet`（`toDocument`） |
+| Listing 装配（内容链输入建单口） | `content` `listing/ListingDraftFactory` |
+| 人工编辑覆盖（AI → HUMAN） | `content` `listing/HumanContentEdit` |
+| Temporal 编排壳（`content-{listingId}` workflow / 每步一 activity） | `worker-runtime` `ContentWorkflowImpl` + `ContentChainActivitiesImpl` + `ContentWorkerFactory` |
+| 幂等 / 启动口径（确定性 workflowId + 复用策略） | `worker-runtime` `ContentRuntime.workflowIdFor` + `ContentWorkflowLauncher.optionsFor` |
+| 降级留痕的读改写（本次判定覆盖历史） | `content` `ContentWorkingSet.addDegradedStep` / `clearDegradedStep`（执行器单点调用） |
+

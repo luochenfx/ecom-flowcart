@@ -97,6 +97,9 @@
       "images": [
         { "media_id": "media-2001", "role": "MAIN", "platform_media_id": "tb-media-9001" }
       ],
+      "degraded_steps": [
+        { "step": "title.rewrite", "reason": "LLM 端点超时（重试耗尽），已回填清洗后原文" }
+      ],
       "provenance": {
         "created_by_step": "LISTING",
         "updated_by_step": "AI",

@@ -2,8 +2,15 @@
 <!--
   worker-runtime —— Temporal / RabbitMQ worker 启动与角色管理（ADR-0002：#13 / ADR-0009）。
   Composition Root 之一（位于最外层）：注册 workflow/activity、启动 worker、消费领域事件。
-  骨架阶段无业务源码；对业务模块 workflow/activity 的注册依赖随对应 slice 落地追加。
-  依赖方向：core-contracts（起步）。
+
+  #20 落地内容链编排壳：`content-{listingId}` 确定性 workflow（每步一个 activity），与 content
+  模块共享单步失败语义（ContentStepExecutor）——content 保持纯 Java（禁环②：不依赖 io.temporal..），
+  Temporal 类型只在本模块出现。
+
+  依赖方向：core-contracts + content（业务 Step / 单步语义）+ catalog（CatalogStore 端口，读写
+  product 文档）。test：adapter-1688（demo 复用 #19 采集入口造 master 就绪 Listing）、
+  temporal-testing（时间跳跃 + in-process test service，无需 docker / Temporal CLI）、
+  WireMock（fake LLM / 媒体端点）、core-contracts test-jar（契约门）、ArchUnit（workflow 确定性禁则）。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -26,6 +33,65 @@
       <groupId>io.autocommerce</groupId>
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <!-- 业务 Step（SPI 装配）与内容链单步执行语义（ContentStepExecutor） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>content</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- CatalogStore 端口：activity 读写 product 文档（v1 实现 = JsonFileCatalogStore） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-sdk</artifactId>
+    </dependency>
+
+    <!-- test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 契约测试基座（ContractSchemas / ContractAssertions，随 core-contracts test-jar 分发） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- demo 复用 #19 采集入口（1688 OfferFetch 子集，Java SPI 装配） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-1688</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- TestWorkflowEnvironment（时间跳跃 + in-process test service，无需 docker） -->
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-testing</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>
