@@ -103,7 +103,7 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 
 1. **双向 fixture**（硬门槛）：每平台 Adapter 必带两套 fixture——`platform→standard`（平台 JSON 响应 → 期望标准模型）与 `standard→platform`（标准模型 → 平台请求体）；core 提供**契约校验器**（用 #7/#8/#10 的 JSON Schema 校验 Adapter 输出/输入），fixture 即"贡献者承诺的映射语义"。
 2. **模拟平台**：WireMock/本地 stub server 按 fixture 返回，Adapter 测试不依赖真实网络；VCR 回放（真实调用录制）作进阶可选，非门槛。
-3. **错误映射测试**（硬门槛）：至少 RETRYABLE（限流响应）/ NON_RETRYABLE（业务拒绝码）/ AMBIGUOUS（超时）各一例——验证 Adapter 正确翻译平台错误到统一异常契约。
+3. **错误映射测试**（硬门槛）：至少 RETRYABLE（限流响应）/ NON_RETRYABLE（业务拒绝码）/ AMBIGUOUS（超时）各一例——验证 Adapter 正确翻译平台错误到统一异常契约。**只读 Capability 豁免**：AMBIGUOUS 语义是"写是否生效未知"（§6），纯只读能力（如 OfferFetch，v1 采集）超时/断连=安全重试，归 RETRYABLE、不产出 AMBIGUOUS——该子集免 AMBIGUOUS 示例；写路径 Capability（Publish/OrderSync/Address/Shipment）落地时补齐（首个 1688 Adapter 写能力 = #23）。
 4. **认证接入说明**（硬门槛）：README 写清开发者如何配置测试凭据。
 
 **PR checklist**：① 双向 fixture 全过（core 契约校验）；② 三类错误映射测试齐备；③ README 认证接入说明；④ 不破坏 core 构建（core 零平台依赖，adapter 编译失败不影响 core 发布）。

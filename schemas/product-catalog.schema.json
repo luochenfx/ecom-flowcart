@@ -26,6 +26,7 @@
         "skus": { "type": "array", "items": { "$ref": "#/$defs/SkuRef" } },
         "source_categories": { "type": "array", "items": { "$ref": "#/$defs/CategoryRef" }, "description": "来源平台类目挂载（多 taxonomy）" },
         "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" }, "description": "来源属性快照（1688 采集原样，JSONB）" },
+        "platform_raw": { "type": ["object", "null"], "description": "来源 offer 原始响应逃生口（JSONB）：标准模型未覆盖的平台字段直通不丢（审计/对账）。由采集（OfferFetch → catalog）写入，后续加工不改写（specs/0005 §3 转换三分）" },
         "provenance": { "$ref": "#/$defs/Provenance" }
       }
     },

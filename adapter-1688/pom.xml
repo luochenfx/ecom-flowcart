@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  adapter-1688 —— 1688 平台 Adapter（ADR-0007 / specs/0005）。
+
+  本票（#19 catalog slice）落地首个 1688 Adapter 的 OfferFetch 子集：
+  - 独立 Maven 模块 + Java SPI（PlatformAdapterProvider）声明能力清单，不依赖 Spring 容器
+  - 结构转换（1688 offer JSON ↔ 标准模型采集面 OfferData）在 Adapter 代码内；
+    业务映射留 Listing / master 数据；未覆盖字段走 OfferData.raw（落 Spu.platform_raw）
+  - 错误契约：只抛 AdapterException（NON_RETRYABLE / RETRYABLE；读操作超时 = 安全重试，不属 AMBIGUOUS）
+  - WireMock 模拟平台，无真实账号可跑；fixture 即映射语义承诺
+
+  后续 #23（首个平台 Adapter 全能力收口）在本模块扩展 Purchase / Shipment / Auth 等能力，
+  并按真实 1688 API 文档实测校准：本子集的 categoryId/categoryName/attributes[] 字段名、
+  规格组合串解析规则、网关请求签名与 access_token 接入均为 #23 实测校准项。
+  依赖方向：仅 core-contracts（禁环①：插件不反向依赖业务模块）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.autocommerce</groupId>
+    <artifactId>ecom-flowcart</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>adapter-1688</artifactId>
+  <name>adapter-1688</name>
+  <description>1688 平台 Adapter（OfferFetch 子集）——独立 Maven 模块 + Java SPI</description>
+
+  <dependencies>
+    <!-- 契约层：Capability 接口族 + OfferData 采集面 + 标准模型（jackson 随其传递） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <!-- test：JUnit 5 / AssertJ（Boot BOM 管理）；ArchUnit（根 pom depMgmt 收口）；
+         WireMock（根 pom depMgmt 收口，模拟 1688 网关，无真实账号可跑） -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

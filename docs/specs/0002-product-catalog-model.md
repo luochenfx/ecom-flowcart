@@ -25,6 +25,7 @@ SPU (master, 平台无关)
 ├── images[]: MediaRef                         # 主图/轮播/详情图
 ├── source_categories[]: CategoryRef           # 来源平台类目（多 taxonomy）
 ├── attributes[]: Attribute                    # 来源属性快照（JSONB 键值）
+├── platform_raw?: object                       # 来源 offer 原始响应逃生口（JSONB，未覆盖字段直通不丢）
 ├── source_ref: SourceRef                      # 唯一货源（1688 offer）
 └── skus[]: SkuRef
 
@@ -60,6 +61,7 @@ Listing (平台特化铺货内容，一 Listing ↔ 一 execution，对齐 #11)
   - SPU.`attributes`：来源属性快照（1688 采集原样，保留原始键名）。
   - Listing.`platform_attributes`：目标类目属性值，含 `platform_attr_id`。
 - 不开 EAV 表（查询/迁移成本高）；JSONB 由 DB（Postgres）承载。若未来出现高频过滤需求，再针对具体键建索引列（演进，非 v1）。
+- **逃生口 `platform_raw`**：SPU 级保留来源 offer 原始响应（采集写、加工不改写）——标准模型未覆盖的平台字段直通不丢（specs/0005 §3），规避为平台演进逐字段建模。
 
 ## 5. 多语言
 

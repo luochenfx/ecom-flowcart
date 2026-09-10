@@ -1,0 +1,39 @@
+{
+  "result": {
+    "productId": 6688990011,
+    "subject": "便携蓝牙音箱 迷你无线低音炮 户外防水",
+    "imageUrl": "https://cbu01.alicdn.com/img/ibank/2026/001/001/0000000001.jpg",
+    "priceRanges": [
+      { "startQuantity": 1, "price": 45.90 },
+      { "startQuantity": 100, "price": 39.90 }
+    ],
+    "detailPage": "https://detail.1688.com/offer/6688990011.html",
+    "status": "published",
+    "categoryId": "1601",
+    "categoryName": "数码/影音/音箱",
+    "attributes": [
+      { "name": "电池容量", "value": "1200mAh", "unit": "mAh" },
+      { "name": "防水等级", "value": 5 },
+      { "name": "支持蓝牙", "value": true }
+    ],
+    "skuInfo": {
+      "specs": [
+        {
+          "specId": "spec-1",
+          "name": "颜色",
+          "values": [
+            { "valueId": "v-1", "name": "黑色" },
+            { "valueId": "v-2", "name": "白色" }
+          ]
+        }
+      ],
+      "skuMap": {
+        "颜色:黑色": { "skuId": "523681097354", "specId": "spec-1", "price": 45.9, "stock": 120 },
+        "颜色:白色": { "skuId": "523681097355", "specId": "spec-1", "price": 45.9, "stock": 80 }
+      }
+    }
+  },
+  "success": true,
+  "errorCode": "0",
+  "errorMsg": null
+}
