@@ -45,6 +45,7 @@ Listing (平台特化铺货内容，一 Listing ↔ 一 execution，对齐 #11)
 ├── spec_mappings[]: SpecMapping                 # canonical 规格名 → 平台属性 ID
 ├── sku_set[]: ListingSku                        # 引用 canonical SKU + 平台售价 + enabled
 ├── images[]: ListingImage                       # 引用 SPU 资产或覆盖图 + platform_media_id 回填
+├── degraded_steps[]: DegradedStep               # 内容链 Step 级降级留痕（specs/0006 §5/§6，空 = 全 Step 正常）
 └── provenance（父 = spu_id）
 ```
 

@@ -2,8 +2,18 @@
 <!--
   content —— 内容链（ADR-0008：#12）。职责：每 Listing 一 content-{listingId} workflow，
   AI Step（经 core Step SPI + LLMProvider，HTTP 直连外部 OpenAI-compatible 端点）产改写稿/价格/媒体；
-  产物 = Listing 内容就绪。骨架阶段无业务源码，业务由 ticket #20 落地。
-  依赖方向：仅 core-contracts。
+  产物 = Listing 内容就绪。
+
+  依赖方向：main 仅 core-contracts（禁环②：不直连平台 SDK，零 Spring / 零 Temporal——业务逻辑模块
+  保持纯 Java，编排壳（Temporal workflow/activity）落 worker-runtime 这个 composition root，
+  与 #19「catalog 纯 Java、装配归 composition root」同例）。jackson-databind 由 core-contracts
+  传递（产物文档序列化 / Step params JsonNode 显式声明）。
+  test：catalog + adapter-1688（Demo harness 复用 #19 的采集入口造 master 就绪的 Listing——
+  与 catalog 的 demo 依赖 adapter-1688 同例）、core-contracts test-jar（契约门）、
+  WireMock（fake LLM / 媒体端点，无需真实模型）、ArchUnit（本模块禁环）。
+
+  v1 媒体处理 = 拉取归档到本地 root（去水印/尺寸转换待图像库引入）；真库（Postgres/JPA）与
+  Temporal 由各自 slice 收敛，本模块不感知。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -19,7 +29,7 @@
 
   <artifactId>content</artifactId>
   <name>content</name>
-  <description>内容链：AI Step（改写/价格/媒体）产物与 Listing 内容就绪</description>
+  <description>内容链：AI Step（翻译回填/改写/描述/价格/媒体）产物与 Listing 内容就绪</description>
 
   <dependencies>
     <dependency>
@@ -27,5 +37,66 @@
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
     </dependency>
+
+    <!-- test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 契约测试基座（ContractSchemas / ContractAssertions，随 core-contracts test-jar 分发） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- Demo harness：复用 #19 采集入口（1688 OfferFetch 子集 + catalog 落库）造 master 就绪的 Listing -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-1688</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>catalog</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- 内容链测试 fixture（ContentDocs / FakeLlmGateway / FakeMediaProcessor）随 test-jar 暴露给
+           worker-runtime 等其他模块复用（#20 AC-6 单元测试依赖） -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

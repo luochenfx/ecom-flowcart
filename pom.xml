@@ -55,6 +55,9 @@
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <!-- Temporal Java SDK 定版（ADR-0002 自托管编排；1.29.0 = Maven Central 最新稳定）。
+         temporal-testing 自带 in-process test service（纯 Java，无需 docker / CLI）。 -->
+    <temporal.version>1.29.0</temporal.version>
   </properties>
 
   <!-- Aliyun Public Repository：依赖解析优先走国内镜像（pom 内声明，clone 即用） -->
@@ -123,6 +126,21 @@
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
         <version>1.5.6</version>
+        <scope>test</scope>
+      </dependency>
+      <!-- Temporal Java SDK（ADR-0002：自托管编排；确定性 workflow / 每步一个 activity）。
+           仅 worker-runtime 与后续 api(scheduler) 消费；业务模块（content/publish/order）**不得**
+           依赖 io.temporal..（禁环②，ArchUnit 拦）。 -->
+      <dependency>
+        <groupId>io.temporal</groupId>
+        <artifactId>temporal-sdk</artifactId>
+        <version>${temporal.version}</version>
+      </dependency>
+      <!-- 时间跳跃测试基座（TestWorkflowEnvironment + in-process test service）；test scope。 -->
+      <dependency>
+        <groupId>io.temporal</groupId>
+        <artifactId>temporal-testing</artifactId>
+        <version>${temporal.version}</version>
         <scope>test</scope>
       </dependency>
     </dependencies>
