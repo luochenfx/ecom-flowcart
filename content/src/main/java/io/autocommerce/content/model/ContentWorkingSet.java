@@ -33,6 +33,12 @@ import java.util.Set;
  *
  * <p>降级留痕（specs/0006 §5）：非硬依赖 Step 失败 → {@link #addDegradedStep(String, String)}，
  * 物化时写入 {@code listing.degraded_steps}（看板 HITL），内容链继续。
+ *
+ * <p><b>拆分候选（#43 标注，本 ticket 不重构）</b>：本类同时承担六组写职责——SPU
+ * titles / descriptions、listing overrides、skuSet、media、provenance 漂移、degraded 留痕，
+ * 外加 {@link #toDocument(String)} 物化。作为"读改写的一处落点"（working-set 形态）目前可接受，
+ * 但已是分裂候选：**下次触及 SPU↔listing 同步或 provenance drift 时**按职责拆开
+ * （如 SPU 视图 / Listing 视图 / 物化器三者），不要继续往里堆字段与标记位。
  */
 public final class ContentWorkingSet {
 
