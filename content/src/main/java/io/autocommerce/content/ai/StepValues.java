@@ -21,6 +21,21 @@ import java.util.Map;
  * <p>放本包（{@code content.ai}）而非更外层：ArchUnit 的
  * {@code AI_STEPS_DEPEND_ON_CORE_CONTRACT_ONLY} 只允许内置 Step 依赖 core + JDK + Jackson
  * （ADR-0008"Step 接入面与社区 Step 完全一致"的机械表达）。
+ *
+ * <p><b>残留疑点（#43 收口时记录）：为什么不与 {@code ListingStepContext} 的写侧
+ * {@code stringMap} / {@code list} 助手合并</b>——两侧都在做"逐元素校验的下行转换"，形态相近，
+ * 但分处 {@code content.ai} 与 {@code content.step} 两包，合并只有两条路：
+ * <ol>
+ *   <li>本类上提到 {@code content.step}——内置 Step 的字节码里就会出现对 {@code ListingStepContext}
+ *       的**指令级引用**。现状之所以能通过护栏：javac 把 {@code ListingStepContext.SPU_*} 这类
+ *       {@code static final String} 常量编译期内联，常量池里虽仍残留一条
+ *       {@code CONSTANT_Class} 条目，但没有任何指令引用它，ArchUnit 按访问取依赖、因此判不出来；
+ *       一旦改成调用真实类（含静态方法），指令级引用出现，护栏立即红。</li>
+ *   <li>{@code ListingStepContext} 反向依赖本类——方向 {@code step → ai}，层次倒置：通用的
+ *       StepContext 实现去依赖某一个 Step 家族的助手。</li>
+ * </ol>
+ * 两条路的代价都高于"两份各约 20 行的校验"，且两侧语义本就不同（写侧报错带字段路径、读侧不带），
+ * 故**维持现状**——这份重复是护栏的价格，不是漏抽的公共代码。
  */
 final class StepValues {
 
