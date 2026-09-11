@@ -61,7 +61,8 @@ public final class PriceStrategyStep implements AiStep {
 
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
-        List<Sku> masterSkus = skuList(context.read(new FieldRef(ListingStepContext.SPU_SKUS)));
+        List<Sku> masterSkus =
+                StepValues.typedList(context.read(new FieldRef(ListingStepContext.SPU_SKUS)), Sku.class);
         if (masterSkus.isEmpty()) {
             throw new StepExecutionException("master 无 SKU，价格策略无输入");
         }
@@ -82,7 +83,9 @@ public final class PriceStrategyStep implements AiStep {
         }
 
         Map<String, Boolean> enabledBySku = new LinkedHashMap<>();
-        for (ListingSku existing : listingSkuList(context.read(new FieldRef(ListingStepContext.LISTING_SKU_SET)))) {
+        List<ListingSku> existingSkuSet = StepValues.typedList(
+                context.read(new FieldRef(ListingStepContext.LISTING_SKU_SET)), ListingSku.class);
+        for (ListingSku existing : existingSkuSet) {
             enabledBySku.put(existing.skuId(), existing.enabled());
         }
 
@@ -113,15 +116,5 @@ public final class PriceStrategyStep implements AiStep {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Sku> skuList(Object value) {
-        return value == null ? List.of() : (List<Sku>) value;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<ListingSku> listingSkuList(Object value) {
-        return value == null ? List.of() : (List<ListingSku>) value;
     }
 }

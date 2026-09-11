@@ -63,7 +63,8 @@ public final class MediaProcessStep implements AiStep {
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
         String operation = StepParams.text(context.params(), "operation", "archive");
-        List<MediaAsset> assets = mediaList(context.read(new FieldRef(ListingStepContext.MEDIA)));
+        List<MediaAsset> assets =
+                StepValues.typedList(context.read(new FieldRef(ListingStepContext.MEDIA)), MediaAsset.class);
 
         List<MediaAsset> updated = new ArrayList<>(assets);
         int processed = 0;
@@ -97,10 +98,5 @@ public final class MediaProcessStep implements AiStep {
         return asset.storageRef() != null && !asset.storageRef().isBlank()
                 && asset.processingState() != ProcessingState.RAW
                 && asset.processingState() != ProcessingState.FAILED;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<MediaAsset> mediaList(Object value) {
-        return value == null ? List.of() : (List<MediaAsset>) value;
     }
 }

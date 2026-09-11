@@ -50,20 +50,10 @@ public final class ContentWorkerFactory {
         ContentChainActivities activities = new ContentChainActivitiesImpl(store,
                 new ContentStepExecutor(provider.steps(), Clock.systemUTC()),
                 "ContentWorkflow",
-                // 生产 worker 取 ActivityExecutionContext 派生坐标；start() 路径暂用"未启动"占位
-                // ——本方法返回后调用方会用 register() 接管 activity 实例并接 ActivityExecutionContext，
-                // 这里占位仅保证构造器不抛 NPE。
-                new WorkflowCoordinates() {
-                    @Override
-                    public String workflowId() {
-                        return "unbound-workflow-id";
-                    }
-
-                    @Override
-                    public String runId() {
-                        return "unbound-run-id";
-                    }
-                });
+                // 坐标取真实值：activity 执行时从 ActivityExecutionContext 拿 workflowId / runId
+                // （惰性求值，见 WorkflowCoordinates#fromActivityExecutionContext）。
+                // 早期版本此处传字面量占位、并声称"调用方会接管 activity 实例再接上下文"——没有这样的调用方。
+                WorkflowCoordinates.fromActivityExecutionContext());
         WorkerFactory factory = WorkerFactory.newInstance(client);
         register(factory.newWorker(ContentRuntime.TASK_QUEUE), activities);
         factory.start();

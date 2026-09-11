@@ -47,8 +47,9 @@ public final class ContentChainActivitiesImpl implements ContentChainActivities 
     /**
      * @param events        事件发布器；生产换 RabbitMQ 实现，测试传 {@link NoopEventPublisher}
      * @param workflowType  workflow 类型（如 {@code ContentWorkflow}），写进事件 payload
-     * @param coordinates   Temporal 坐标提供器（workflowId / runId / 业务键），由 worker 装配
-     *                      时注入 Temporal ActivityExecutionContext 派生值
+     * @param coordinates   Temporal 坐标提供器（workflowId / runId）。生产装配与 E2E 传
+     *                      {@link WorkflowCoordinates#fromActivityExecutionContext()}（activity
+     *                      上下文里取真实值）；不需要 activity 上下文的单测注入静态桩
      */
     public ContentChainActivitiesImpl(CatalogStore store, ContentStepExecutor executor, EventPublisher events,
                                       String workflowType, WorkflowCoordinates coordinates) {

@@ -21,6 +21,8 @@ import io.autocommerce.core.testutil.ContractAssertions;
 import io.autocommerce.core.testutil.ContractObjectMapper;
 import io.autocommerce.core.testutil.ContractSchemas;
 import io.autocommerce.core.step.StepOutcome;
+import io.autocommerce.worker.event.NoopEventPublisher;
+import io.autocommerce.worker.event.SysWorkflowFailedEvent;
 import io.temporal.client.WorkflowException;
 import io.temporal.testing.TestWorkflowEnvironment;
 import org.junit.jupiter.api.AfterEach;
@@ -75,6 +77,7 @@ class ContentWorkflowE2ETest {
     private WireMockServer server;
     private JsonFileCatalogStore store;
     private Path mediaRoot;
+    private NoopEventPublisher events;
 
     @BeforeEach
     void startGateways() throws Exception {
@@ -261,6 +264,16 @@ class ContentWorkflowE2ETest {
 
             assertThat(thrown).isInstanceOf(WorkflowException.class);
             assertThat(messagesOf(thrown)).contains(ContentPlan.I18N_BACKFILL);
+
+            // —— AC-6：抛回 Temporal 之前先发 sys.workflow.failed，且坐标是 activity 上下文里的真值 ——
+            assertThat(events.publishedFailedEvents()).hasSize(1);
+            SysWorkflowFailedEvent published = events.publishedFailedEvents().get(0);
+            assertThat(published.failedStep()).isEqualTo(ContentPlan.I18N_BACKFILL);
+            assertThat(published.workflowId()).isEqualTo(ContentRuntime.workflowIdFor(LISTING_ID));
+            assertThat(published.runId())
+                    .as("runId 取自 ActivityExecutionContext，不得再是 workflowId 占位")
+                    .isNotBlank()
+                    .isNotEqualTo(published.workflowId());
         } finally {
             env.close();
         }
@@ -316,23 +329,14 @@ class ContentWorkflowE2ETest {
                 mediaRoot);
 
         TestWorkflowEnvironment env = TestWorkflowEnvironment.newInstance();
+        events = new NoopEventPublisher();
         ContentChainActivities activities = new ContentChainActivitiesImpl(store,
                 new ContentStepExecutor(provider.steps(), Clock.systemUTC()),
+                events,
                 "ContentWorkflow",
-                new WorkflowCoordinates() {
-                    @Override
-                    public String workflowId() {
-                        return ContentRuntime.workflowIdFor(LISTING_ID);
-                    }
-
-                    @Override
-                    public String runId() {
-                        // 第一次硬失败时 runId 还没确定（activity 抛 ContentChainFailedException 时
-                        // Temporal run 仍在构造），用 workflowId 占位以满足构造器非空约束；看板消费者
-                        // 真正用 runId 时从 Temporal UI 取（事件丢失场景的兜底巡检就有这个值）。
-                        return ContentRuntime.workflowIdFor(LISTING_ID);
-                    }
-                });
+                // 与生产同一装配口径：workflowId / runId 都从 activity 上下文取真实值——本测试的
+                // activity 就跑在真实 activity 上下文里，所以这条路径被场景 4 真实覆盖。
+                WorkflowCoordinates.fromActivityExecutionContext());
         ContentWorkerFactory.register(env.newWorker(ContentRuntime.TASK_QUEUE), activities);
         if (!env.isStarted()) {
             env.start();

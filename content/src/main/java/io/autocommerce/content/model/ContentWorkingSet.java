@@ -9,6 +9,7 @@ import io.autocommerce.core.catalog.model.Provenance;
 import io.autocommerce.core.catalog.model.ProvenanceStep;
 import io.autocommerce.core.catalog.model.Sku;
 import io.autocommerce.core.catalog.model.Spu;
+import io.autocommerce.content.NullSafe;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -88,34 +89,33 @@ public final class ContentWorkingSet {
      */
     public static ContentWorkingSet of(ProductCatalog document, String listingId) {
         Objects.requireNonNull(document, "master 文档必填");
-        Listing listing = (document.listings() == null ? List.<Listing>of() : document.listings()).stream()
+        Listing listing = NullSafe.list(document.listings()).stream()
                 .filter(l -> listingId != null && listingId.equals(l.listingId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("文档内无 Listing: " + listingId));
-        Spu spu = (document.spus() == null ? List.<Spu>of() : document.spus()).stream()
+        Spu spu = NullSafe.list(document.spus()).stream()
                 .filter(s -> Objects.equals(s.spuId(), listing.spuId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Listing " + listingId + " 指向的 SPU 不在文档内: " + listing.spuId()));
 
         Map<String, MediaAsset> media = new LinkedHashMap<>();
-        for (MediaAsset asset : document.mediaAssets() == null ? List.<MediaAsset>of() : document.mediaAssets()) {
+        for (MediaAsset asset : NullSafe.list(document.mediaAssets())) {
             media.put(asset.mediaId(), asset);
         }
-        List<Sku> masterSkus = (document.skus() == null ? List.<Sku>of() : document.skus()).stream()
+        List<Sku> masterSkus = NullSafe.list(document.skus()).stream()
                 .filter(s -> Objects.equals(s.spuId(), spu.spuId()))
                 .toList();
 
         return new ContentWorkingSet(
                 document, listingId, spu, listing, masterSkus,
-                new LinkedHashMap<>(spu.titles() == null ? Map.of() : spu.titles()),
-                new LinkedHashMap<>(spu.descriptions() == null ? Map.of() : spu.descriptions()),
-                new LinkedHashMap<>(listing.titleOverrides() == null ? Map.of() : listing.titleOverrides()),
-                new LinkedHashMap<>(
-                        listing.descriptionOverrides() == null ? Map.of() : listing.descriptionOverrides()),
+                new LinkedHashMap<>(NullSafe.map(spu.titles())),
+                new LinkedHashMap<>(NullSafe.map(spu.descriptions())),
+                new LinkedHashMap<>(NullSafe.map(listing.titleOverrides())),
+                new LinkedHashMap<>(NullSafe.map(listing.descriptionOverrides())),
                 media,
-                new ArrayList<>(listing.degradedSteps() == null ? List.of() : listing.degradedSteps()),
-                new ArrayList<>(listing.skuSet() == null ? List.of() : listing.skuSet()));
+                new ArrayList<>(NullSafe.list(listing.degradedSteps())),
+                new ArrayList<>(NullSafe.list(listing.skuSet())));
     }
 
     // ---- 读（Step 经 StepContext 访问） ----
@@ -258,12 +258,12 @@ public final class ContentWorkingSet {
         }
 
         List<Spu> spus = new ArrayList<>();
-        for (Spu s : source.spus() == null ? List.<Spu>of() : source.spus()) {
+        for (Spu s : NullSafe.list(source.spus())) {
             spus.add(Objects.equals(s.spuId(), spu.spuId()) ? newSpu : s);
         }
 
         List<Listing> listings = new ArrayList<>();
-        for (Listing l : source.listings() == null ? List.<Listing>of() : source.listings()) {
+        for (Listing l : NullSafe.list(source.listings())) {
             listings.add(l.listingId().equals(listingId) ? newListing : l);
         }
         return new ProductCatalog(source.schemaVersion(), spus, source.skus(), listings, newMedia);

@@ -24,15 +24,19 @@ import java.util.Objects;
  * </ul>
  * 单点实现保证"降级 vs 硬失败"语义在任何编排形态下一致（specs/0006 §5）。
  *
- * <p>失败语义（specs/0006 §5/§8）：
+ * <p>失败语义（specs/0006 §5/§8），**两条出口 × {@code critical} 位 = 唯一判定点**：
  * <ul>
- *   <li>Step 返回 {@code DEGRADED} → 产物已按缺省写入（或字段保持上游值 = 原文），登记
- *       {@code degraded_steps}，内容链继续；</li>
- *   <li>Step 抛 {@link StepExecutionException} 且 plan 标 {@code critical} → 抛
- *       {@link ContentChainFailedException}（内容链 failed，Listing 不进铺货队列）；</li>
- *   <li>Step 抛异常且非 critical → 按降级处理（字段保持上游值 = specs §5"产物缺省（原文）"），
- *       内容链继续。</li>
+ *   <li>Step 返回 {@code DEGRADED}（产物已按缺省写入 / 字段保持上游值）：非 critical → 登记
+ *       {@code degraded_steps} 后内容链继续；critical → 抛 {@link ContentChainFailedException}；</li>
+ *   <li>Step 抛 {@link StepExecutionException}：critical → 抛 {@link ContentChainFailedException}
+ *       （内容链 failed，Listing 不进铺货队列）；非 critical → 按降级处理（字段保持上游值 =
+ *       specs §5"产物缺省（原文）"），内容链继续。</li>
  * </ul>
+ *
+ * <p><b>{@code critical} 是"失败"的全称</b>（#41 review 拍板，specs/0006 §10）：硬依赖位不仅拦异常，
+ * 也拦 Step 自报的 {@code DEGRADED}——二者都是"这一步没能交付完整产物"。Step 只声明"产物不完整"
+ * 这一事实，**不读计划、不判定自己是否硬依赖**（同一 Step 在国内链可跳过、在跨境链是硬依赖，
+ * 硬依赖位属链路配置而非 Step 声明，specs/0006 §8）。
  *
  * <p>时钟注入（{@link Clock}）：{@code provenance.updated_at} 不由 {@code Instant.now()} 直取，
  * 便于测试固定时间；生产传入 UTC 时钟。
@@ -82,10 +86,15 @@ public final class ContentStepExecutor {
             StepResult result = step.execute(context);
             switch (result.outcome()) {
                 case DEGRADED -> {
-                    // Step 自报降级（未抛异常，产物已按缺省写入/字段保持上游值）：登记留痕。
+                    // Step 自报降级（未抛异常，产物已按缺省写入/字段保持上游值）。
                     // 留痕是链路的单一出口，不依赖每个 Step 自觉——否则 degraded_steps 会漏记。
                     String reason = result.reason() == null || result.reason().isBlank()
                             ? "Step 降级（产物取缺省：原文/成本价）" : result.reason();
+                    // 硬依赖位的 DEGRADED 与抛异常同判（specs/0006 §5/§10）：Step 只声明"产物不完整"，
+                    // 致命与否由计划的 critical 位决定。判失败即不落留痕——本次运行的产物整体不物化。
+                    if (planStep.critical()) {
+                        throw new ContentChainFailedException(planStep.stepId(), reason, null);
+                    }
                     working.addDegradedStep(planStep.stepId(), reason);
                     return new ContentStepRun(planStep.stepId(), result.outcome(), reason, context.modelCalls());
                 }

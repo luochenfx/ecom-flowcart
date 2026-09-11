@@ -72,8 +72,9 @@ public record ContentPlan(List<PlanStep> steps) {
      * 计划中的一个 Step 位。
      *
      * @param stepId   Step id（须与 SPI 注册的 Step 声明一致）
-     * @param critical true = 硬依赖：失败即内容链 failed（走重放/告警）；false = 可降级：
-     *                 产物取缺省（原文/默认加价率）+ 写 {@code degraded_steps}，内容链继续
+     * @param critical true = 硬依赖：Step 抛异常**或自报 DEGRADED**（产物不完整）均判内容链 failed
+     *                 （走重放/告警）；false = 可降级：产物取缺省（原文/默认加价率）+
+     *                 写 {@code degraded_steps}，内容链继续
      */
     public record PlanStep(String stepId, boolean critical) {
 

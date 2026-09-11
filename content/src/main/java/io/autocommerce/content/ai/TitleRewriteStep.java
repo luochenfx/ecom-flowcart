@@ -4,9 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.autocommerce.core.step.AiStep;
-import io.autocommerce.core.step.ChatMessage;
-import io.autocommerce.core.step.ChatRequest;
-import io.autocommerce.core.step.ChatRole;
 import io.autocommerce.core.step.FieldRef;
 import io.autocommerce.core.step.ModelRequirement;
 import io.autocommerce.core.step.ProviderException;
@@ -28,7 +25,7 @@ import java.util.Map;
  * {@code spu.titles}）而非直读来源标题——翻译与改写是两件事（specs/0002 §6）。
  *
  * <p>失败 = 降级（specs/0006 §8"用清洗后原文 + degraded"）：不写 overrides，铺货时自然回退
- * canonical 标题；登记 {@code degraded_steps}，内容链继续。
+ * canonical 标题；登记 {@code degraded_steps}，内容链继续。空返回同样按"该 locale 无产物"跳过。
  */
 public final class TitleRewriteStep implements AiStep {
 
@@ -65,13 +62,14 @@ public final class TitleRewriteStep implements AiStep {
 
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
-        Map<String, String> titles = stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
-        List<String> locales = stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
+        Map<String, String> titles =
+                StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
+        List<String> locales =
+                StepValues.stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
 
         List<String> usable = new ArrayList<>();
         for (String locale : locales) {
-            String canonical = titles.get(locale);
-            if (canonical != null && !canonical.isBlank()) {
+            if (StepValues.nonBlank(titles.get(locale))) {
                 usable.add(locale);
             }
         }
@@ -88,14 +86,8 @@ public final class TitleRewriteStep implements AiStep {
         try {
             for (String locale : usable) {
                 String user = "语言代码：" + locale + "\n原标题：" + titles.get(locale);
-                String rewritten = llm.complete(ModelRequirement.LLM,
-                                new ChatRequest(null,
-                                        List.of(ChatMessage.of(ChatRole.SYSTEM, systemPrompt),
-                                                ChatMessage.of(ChatRole.USER, user)),
-                                        temperature, maxTokens),
-                                context)
-                        .content();
-                if (rewritten != null && !rewritten.isBlank()) {
+                String rewritten = StepLlm.complete(llm, context, systemPrompt, user, temperature, maxTokens);
+                if (StepValues.nonBlank(rewritten)) {
                     overrides.put(locale, rewritten.strip());
                 }
             }
@@ -107,15 +99,5 @@ public final class TitleRewriteStep implements AiStep {
         }
         context.write(new FieldRef(ListingStepContext.LISTING_TITLE_OVERRIDES), overrides);
         return StepResult.ok();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, String> stringMap(Object value) {
-        return value == null ? Map.of() : (Map<String, String>) value;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<String> stringList(Object value) {
-        return value == null ? List.of() : (List<String>) value;
     }
 }

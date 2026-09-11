@@ -4,9 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.autocommerce.core.step.AiStep;
-import io.autocommerce.core.step.ChatMessage;
-import io.autocommerce.core.step.ChatRequest;
-import io.autocommerce.core.step.ChatRole;
 import io.autocommerce.core.step.FieldRef;
 import io.autocommerce.core.step.ModelRequirement;
 import io.autocommerce.core.step.ProviderException;
@@ -66,14 +63,16 @@ public final class DescGenerateStep implements AiStep {
 
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
-        Map<String, String> titles = stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
+        Map<String, String> titles =
+                StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
         Map<String, String> descriptions =
-                stringMap(context.read(new FieldRef(ListingStepContext.SPU_DESCRIPTIONS)));
-        List<String> locales = stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
+                StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_DESCRIPTIONS)));
+        List<String> locales =
+                StepValues.stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
 
         List<String> usable = new ArrayList<>();
         for (String locale : locales) {
-            if (nonBlank(descriptions.get(locale)) || nonBlank(titles.get(locale))) {
+            if (StepValues.nonBlank(descriptions.get(locale)) || StepValues.nonBlank(titles.get(locale))) {
                 usable.add(locale);
             }
         }
@@ -89,18 +88,12 @@ public final class DescGenerateStep implements AiStep {
         Map<String, String> overrides = new LinkedHashMap<>();
         try {
             for (String locale : usable) {
-                String material = nonBlank(descriptions.get(locale))
+                String material = StepValues.nonBlank(descriptions.get(locale))
                         ? descriptions.get(locale)
                         : titles.get(locale);
                 String user = "语言代码：" + locale + "\n素材：" + material;
-                String generated = llm.complete(ModelRequirement.LLM,
-                                new ChatRequest(null,
-                                        List.of(ChatMessage.of(ChatRole.SYSTEM, systemPrompt),
-                                                ChatMessage.of(ChatRole.USER, user)),
-                                        temperature, maxTokens),
-                                context)
-                        .content();
-                if (generated != null && !generated.isBlank()) {
+                String generated = StepLlm.complete(llm, context, systemPrompt, user, temperature, maxTokens);
+                if (StepValues.nonBlank(generated)) {
                     overrides.put(locale, generated.strip());
                 }
             }
@@ -112,19 +105,5 @@ public final class DescGenerateStep implements AiStep {
         }
         context.write(new FieldRef(ListingStepContext.LISTING_DESCRIPTION_OVERRIDES), overrides);
         return StepResult.ok();
-    }
-
-    private static boolean nonBlank(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, String> stringMap(Object value) {
-        return value == null ? Map.of() : (Map<String, String>) value;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<String> stringList(Object value) {
-        return value == null ? List.of() : (List<String>) value;
     }
 }

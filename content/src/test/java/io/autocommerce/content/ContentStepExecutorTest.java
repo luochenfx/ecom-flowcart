@@ -53,12 +53,12 @@ class ContentStepExecutorTest {
     }
 
     @Test
-    void degradedResultFromStep_isReturnedAsIs() {
+    void degradedResultFromStep_isRegisteredAndReturned() {
         ContentStepExecutor executor = new ContentStepExecutor(
                 List.of(new DegradingStep()), ContentDocs.FIXED_CLOCK);
         ContentWorkingSet working = ContentWorkingSet.of(ContentDocs.masterWithListing(), ContentDocs.listingId());
 
-        ContentStepRun run = executor.execute(working, new ContentPlan.PlanStep("degrade.step", true));
+        ContentStepRun run = executor.execute(working, new ContentPlan.PlanStep("degrade.step", false));
 
         assertThat(run.outcome()).isEqualTo(StepOutcome.DEGRADED);
         assertThat(run.reason()).isEqualTo("缺省产物");
@@ -67,6 +67,25 @@ class ContentStepExecutorTest {
         assertThat(working.degradedSteps()).hasSize(1);
         assertThat(working.degradedSteps().get(0).step()).isEqualTo("degrade.step");
         assertThat(working.degradedSteps().get(0).reason()).isEqualTo("缺省产物");
+    }
+
+    /**
+     * 硬依赖位的 {@code DEGRADED} 与「抛异常」同判（#41 review 拍板，specs/0006 §5/§10）：Step 自报
+     * "产物不完整"不代表它可以替链路决定"这不致命"——硬依赖位属链路配置。典型场景 =
+     * {@code i18n.backfill} 目标 locale 超 hard cap 被截断 → 部分 locale 无内容 → 跨境不可铺。
+     */
+    @Test
+    void criticalStepDegraded_failsTheChain() {
+        ContentStepExecutor executor = new ContentStepExecutor(
+                List.of(new DegradingStep()), ContentDocs.FIXED_CLOCK);
+        ContentWorkingSet working = ContentWorkingSet.of(ContentDocs.masterWithListing(), ContentDocs.listingId());
+
+        assertThatThrownBy(() -> executor.execute(working, new ContentPlan.PlanStep("degrade.step", true)))
+                .isInstanceOf(ContentChainFailedException.class)
+                .hasMessageContaining("degrade.step")
+                .hasMessageContaining("缺省产物");
+        // 判失败 = 本次运行产物整体不物化；留痕表达的是"可铺但有缺口"，此处不适用
+        assertThat(working.degradedSteps()).isEmpty();
     }
 
     /**

@@ -116,8 +116,11 @@ class I18nBackfillStepTest {
     }
 
     /**
-     * Hard cap = 10（specs/0006 §10 fog #20 拍板）：超过 10 个目标 locale → 截断 + DEGRADED 返回（让执行器登记
-     * degraded_steps 给看板 HITL）。超限 locale 不翻译、产物本身已写 master canonical，不阻断铺货。
+     * Hard cap = 10（specs/0006 §10 回填）：超过 10 个目标 locale → 截断 + 返回 DEGRADED。
+     *
+     * <p>本用例只钉 Step 侧事实：超限 locale 不翻译、cap 内的译文写进 master canonical、结果自报
+     * "产物不完整"。**是否致命不由 Step 决定**——i18n.backfill 在标准计划里 {@code critical=true}，
+     * 故执行器会把它收敛为内容链 failed（见 {@code ContentStepExecutorTest#criticalStepDegraded_failsTheChain}）。
      */
     @Test
     void hardCap10_overflowTruncatedAndDegraded() throws Exception {

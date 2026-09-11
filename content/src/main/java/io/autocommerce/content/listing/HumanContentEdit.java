@@ -4,6 +4,7 @@ import io.autocommerce.core.catalog.model.Listing;
 import io.autocommerce.core.catalog.model.ProductCatalog;
 import io.autocommerce.core.catalog.model.Provenance;
 import io.autocommerce.core.catalog.model.ProvenanceStep;
+import io.autocommerce.content.NullSafe;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -44,21 +45,18 @@ public final class HumanContentEdit {
                 && (descriptionOverrides == null || descriptionOverrides.isEmpty())) {
             throw new IllegalArgumentException("人工编辑至少需给出标题或描述的一处改动");
         }
-        // 一次判空：listings 为 null/空时下面的 orElseThrow 已拦截，后续循环复用同一个非空视图
-        List<Listing> sourceListings =
-                document.listings() == null ? List.<Listing>of() : document.listings();
+        // 一次取值：listings 为 null/空时下面的 orElseThrow 已拦截，后续循环复用同一个视图
+        List<Listing> sourceListings = NullSafe.list(document.listings());
         Listing target = sourceListings.stream()
                 .filter(l -> listingId != null && listingId.equals(l.listingId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("文档内无 Listing: " + listingId));
 
-        Map<String, String> titles = new LinkedHashMap<>(
-                target.titleOverrides() == null ? Map.of() : target.titleOverrides());
+        Map<String, String> titles = new LinkedHashMap<>(NullSafe.map(target.titleOverrides()));
         if (titleOverrides != null) {
             titles.putAll(titleOverrides);
         }
-        Map<String, String> descriptions = new LinkedHashMap<>(
-                target.descriptionOverrides() == null ? Map.of() : target.descriptionOverrides());
+        Map<String, String> descriptions = new LinkedHashMap<>(NullSafe.map(target.descriptionOverrides()));
         if (descriptionOverrides != null) {
             descriptions.putAll(descriptionOverrides);
         }
