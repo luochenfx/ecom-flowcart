@@ -22,6 +22,12 @@ import java.util.Objects;
  *          → ProviderRegistry.get(providerId).chat(...) // OpenAI-compatible HTTP 直连
  *          → ctx 记录 usage（token 用量 → 内容链执行记录，specs/0006 §7）
  * </pre>
+ *
+ * <p><b>重审触发条件（#43 标注，本 ticket 不动代码）</b>：单 provider 下本类几乎纯委托——
+ * {@code ModelResolver} 只做静态映射，解析这一步还没长出真实逻辑（usage 记录是它唯一的自有职责）。
+ * 但它是 specs/0006 §4 显式预留的 seam（未来编排器按同一接口路由），**不是多余的中间层**：
+ * 等出现第 2 个 provider 或第 2 条 model_requirement 路由规则时回来重审——若那时解析仍恒等于
+ * "永远返回同一个 providerId + 同一个 model"，才该考虑把本层并进调用方。
  */
 public final class ResolvingLlmGateway implements LlmGateway {
 

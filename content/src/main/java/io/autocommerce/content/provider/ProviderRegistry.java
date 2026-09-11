@@ -13,6 +13,12 @@ import java.util.Objects;
  *
  * <p>v1 只有 {@link OpenAICompatProvider} 一种实现（配置即换后端），装配点（composition root）注册；
  * 未来特殊协议平台写独立 provider 并在此登记，core 与 Step 声明不改（specs/0006 §4）。
+ *
+ * <p><b>重审触发条件（#43 标注，本 ticket 不动代码）</b>：当前的"注册表"是**为第 2 个 provider
+ * 预留**的形态——在只有一张表项时，它比直接持有单个 provider 多出来的只有两件事：重复注册校验、
+ * 以及"未注册即失败"的明确报错（不静默回退）。**等出现第 2 个 LLMProvider** 时回头看这里：
+ * 那时才需要回答"多 provider 之间如何选"（落在
+ * {@link io.autocommerce.core.step.ModelResolver} 还是注册表自身）；现在作答就是臆造需求。
  */
 public final class ProviderRegistry {
 
