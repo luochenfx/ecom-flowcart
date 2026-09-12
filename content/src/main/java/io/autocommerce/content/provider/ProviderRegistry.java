@@ -16,9 +16,16 @@ import java.util.Objects;
  *
  * <p><b>重审触发条件（#43 标注，本 ticket 不动代码）</b>：当前的"注册表"是**为第 2 个 provider
  * 预留**的形态——在只有一张表项时，它比直接持有单个 provider 多出来的只有两件事：重复注册校验、
- * 以及"未注册即失败"的明确报错（不静默回退）。**等出现第 2 个 LLMProvider** 时回头看这里：
- * 那时才需要回答"多 provider 之间如何选"（落在
- * {@link io.autocommerce.core.step.ModelResolver} 还是注册表自身）；现在作答就是臆造需求。
+ * 以及"未注册即失败"的明确报错（不静默回退）。**两类触发点，重审的是不同问题**：
+ * <ol>
+ *   <li><b>出现第 2 个 LLMProvider</b>——表项形态是否还成立（是否该分裂／换选型结构），
+ *       以及"多 provider 之间如何选"（落在 {@link io.autocommerce.core.step.ModelResolver}
+ *       还是注册表自身）；</li>
+ *   <li><b>出现第 2 条 model_requirement 路由规则</b>——注意单加路由规则**不改本表表项数**
+ *       （键是 {@code ProviderId}，映射表在 {@code ModelResolver} 侧），但它让"选型职责归谁"
+ *       第一次成为真问题，故与 (1) 同列触发条件（口径对齐 {@code ResolvingLlmGateway}）。</li>
+ * </ol>
+ * 现在作答就是臆造需求。
  */
 public final class ProviderRegistry {
 

@@ -59,5 +59,8 @@ public class ContentArchitectureTest {
                     "io.autocommerce.core..",
                     "java..",
                     "com.fasterxml..")
-            .because("Step = 无状态插件：只懂标准模型字段 + Step 接口 + model_requirement（ADR-0008）");
+            .because("Step = 无状态插件：只懂标准模型字段 + Step 接口 + model_requirement（ADR-0008）；"
+                    + "本规则若因 content.step 报红，先查 ListingStepContext 的 SPU_* 等常量是否仍为"
+                    + "编译期常量——内联失效会让 Step 出现对 content.step 的真实依赖"
+                    + "（背景见 content.ai.StepValues javadoc）");
 }

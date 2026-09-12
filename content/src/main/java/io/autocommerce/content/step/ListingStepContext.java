@@ -38,6 +38,16 @@ import java.util.Map;
  */
 public final class ListingStepContext implements StepContext, UsageRecorder {
 
+    /**
+     * 字段路径常量。<b>必须一直是编译期常量</b>（{@code static final String} 字面量）：
+     * 内置 Step（{@code content.ai}）对这些常量的引用会被 javac 内联，字节码里没有指令级引用，
+     * {@code ContentArchitectureTest.AI_STEPS_DEPEND_ON_CORE_CONTRACT_ONLY} 因此判不出来，
+     * 但 5 个 Step 的源码都真实依赖本类（{@code import} + 引用 {@code SPU_*}）。
+     * 若有人把它们改成非编译期表达式（如 {@code prefix() + ".titles"}、或从配置读取），
+     * 内联停止、真实引用出现、护栏立即红——而 ArchUnit 只会报"Step 依赖了 content.step"，
+     * 不会提示根因是"某个常量不再是常量"。完整背景与合并评估见
+     * {@code io.autocommerce.content.ai.StepValues} 的 javadoc。
+     */
     public static final String SPU_TITLES = "spu.titles";
     public static final String SPU_DESCRIPTIONS = "spu.descriptions";
     public static final String SPU_SKUS = "spu.skus";
