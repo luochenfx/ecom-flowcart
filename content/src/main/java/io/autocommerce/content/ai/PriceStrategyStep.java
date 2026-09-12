@@ -62,7 +62,7 @@ public final class PriceStrategyStep implements AiStep {
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
         List<Sku> masterSkus =
-                StepValues.typedList(context.read(new FieldRef(ListingStepContext.SPU_SKUS)), Sku.class);
+                StepValues.typedList(context, new FieldRef(ListingStepContext.SPU_SKUS), Sku.class);
         if (masterSkus.isEmpty()) {
             throw new StepExecutionException("master 无 SKU，价格策略无输入");
         }
@@ -84,7 +84,7 @@ public final class PriceStrategyStep implements AiStep {
 
         Map<String, Boolean> enabledBySku = new LinkedHashMap<>();
         List<ListingSku> existingSkuSet = StepValues.typedList(
-                context.read(new FieldRef(ListingStepContext.LISTING_SKU_SET)), ListingSku.class);
+                context, new FieldRef(ListingStepContext.LISTING_SKU_SET), ListingSku.class);
         for (ListingSku existing : existingSkuSet) {
             enabledBySku.put(existing.skuId(), existing.enabled());
         }

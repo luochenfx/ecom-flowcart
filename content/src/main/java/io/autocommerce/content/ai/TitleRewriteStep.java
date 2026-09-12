@@ -63,9 +63,9 @@ public final class TitleRewriteStep implements AiStep {
     @Override
     public StepResult execute(StepContext context) throws StepExecutionException {
         Map<String, String> titles =
-                StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
+                StepValues.stringMap(context, new FieldRef(ListingStepContext.SPU_TITLES));
         List<String> locales =
-                StepValues.stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
+                StepValues.stringList(context, new FieldRef(ListingStepContext.LISTING_LOCALES));
 
         List<String> usable = new ArrayList<>();
         for (String locale : locales) {

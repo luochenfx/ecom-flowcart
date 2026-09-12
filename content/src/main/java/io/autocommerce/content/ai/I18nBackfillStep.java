@@ -96,7 +96,7 @@ public final class I18nBackfillStep implements AiStep {
         // AC-3：Listing 实际目标 locales 优先于 params.target_locales（specs/0006 §2 一处翻译多处复用）。
         // 留兜底：params 缺省 ["en"] 保留 current behavior，零 locale 也不致命。
         List<String> listingLocales =
-                StepValues.stringList(context.read(new FieldRef(ListingStepContext.LISTING_LOCALES)));
+                StepValues.stringList(context, new FieldRef(ListingStepContext.LISTING_LOCALES));
         if (!listingLocales.isEmpty()) {
             targets = listingLocales;
         }
@@ -107,9 +107,9 @@ public final class I18nBackfillStep implements AiStep {
             effectiveTargets = new ArrayList<>(targets.subList(0, MAX_TARGET_LOCALES));
         }
 
-        Map<String, String> titles = StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_TITLES)));
+        Map<String, String> titles = StepValues.stringMap(context, new FieldRef(ListingStepContext.SPU_TITLES));
         Map<String, String> descriptions =
-                StepValues.stringMap(context.read(new FieldRef(ListingStepContext.SPU_DESCRIPTIONS)));
+                StepValues.stringMap(context, new FieldRef(ListingStepContext.SPU_DESCRIPTIONS));
         String sourceTitle = titles.get(sourceLocale);
         if (StepValues.blank(sourceTitle)) {
             throw new StepExecutionException("canonical i18n 缺来源 locale 标题（" + sourceLocale

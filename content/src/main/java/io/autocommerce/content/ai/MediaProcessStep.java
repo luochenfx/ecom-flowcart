@@ -64,7 +64,7 @@ public final class MediaProcessStep implements AiStep {
     public StepResult execute(StepContext context) throws StepExecutionException {
         String operation = StepParams.text(context.params(), "operation", "archive");
         List<MediaAsset> assets =
-                StepValues.typedList(context.read(new FieldRef(ListingStepContext.MEDIA)), MediaAsset.class);
+                StepValues.typedList(context, new FieldRef(ListingStepContext.MEDIA), MediaAsset.class);
 
         List<MediaAsset> updated = new ArrayList<>(assets);
         int processed = 0;
