@@ -60,7 +60,8 @@ class StepValuesTest {
         assertThatThrownBy(() -> StepValues.stringList(contextWith(LOCALES, new HashMap<>()), LOCALES))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageStartingWith("listing.locales")
-                .hasMessageContaining("List<String>");
+                .hasMessageContaining("List<String>")
+                .hasMessageContaining("java.util.HashMap");
     }
 
     // --- 元素类型不符 ---
