@@ -69,8 +69,14 @@ import java.util.Map;
  * {@code path(FieldRef)} 与 {@code ListingStepContext.path(FieldRef)} 逐行同构（同一判空条件、
  * 同一 {@code FieldRef.path 必填} 文案），故路径守卫现为 <b>2 份</b>，与转换器同属"护栏的价格"——
  * 按"两份转换器 + 两份守卫"估，不要按 3 份去找第三处（全仓生产代码命中该文案的就是这 2 处）。
- * 根治是把非空校验下沉到 {@code core.step.FieldRef} 的紧凑构造器、两处守卫一并消失，但那等于 core
- * 契约行为变更，按"core 改动即中止"须另立 Spec 票——此路径在此留档，本票不碰。
+ * 根治是把非空校验下沉到 {@code core.step.FieldRef} 的紧凑构造器，但那等于 core 契约行为变更，按
+ * "core 改动即中止"须另立 Spec 票——此路径在此留档，本票不碰。<b>但收益是"减半"不是"清零"（#52 拆准）</b>：
+ * 下沉后消失的只有 {@code path() == null || path().isBlank()} 这半段（构造器只能保证已构造出的实例内部
+ * path 合法）；{@code field == null}（引用本身为 null）这半段两处仍各留一句兜底（或换
+ * {@code Objects.requireNonNull}）——再严的构造器也拦不住传进来的是 null 引用。故是"判空条件从三合一
+ * 收窄为单条"，不是"两处守卫一并消失"。顺带成本：文案 {@code FieldRef.path 必填} 随之下移到
+ * {@code core-contracts}，{@code StepValuesTest} 中唯一断言该文案的用例 {@code blankFieldPath_failsBeforeReading}
+ * 要跟着改（否则它断到的是 core 构造器，不再是读侧守卫）。
  */
 final class StepValues {
 
@@ -125,7 +131,12 @@ final class StepValues {
         return result;
     }
 
-    /** 文本缺口判定（Step 侧统一口径，勿各处散写 {@code value == null || value.isBlank()}）。 */
+    /**
+     * 文本缺口判定（<b>本包（{@code content.ai}）内置 Step 家族</b>统一口径，勿在该家族内各处散写
+     * {@code value == null || value.isBlank()}）。限定词只到本家族、不是全仓口径（#52 收窄）：
+     * {@code content.media} 的 {@code ArchiveMediaProcessor} 另有同名同形的私有副本（校的是 request
+     * 的 {@code mediaId} / {@code sourceUrl}，走 media SPI 而非 Step），不归本口径管。
+     */
     static boolean blank(String value) {
         return value == null || value.isBlank();
     }
