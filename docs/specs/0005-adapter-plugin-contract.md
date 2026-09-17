@@ -174,7 +174,7 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 
 | 选项 | 内容 | 评估 |
 |---|---|---|
-| a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中本仓实践「core 改动即中止」（**该规则尚无成文条款**：`AGENTS.md` / `docs/adr/0007-adapter-plugin-contract.md` 均无原文，缺口见 [#54](https://github.com/luochenfx/ecom-flowcart/issues/54) 附录第 5 条），须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
+| a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中本仓条款「core 改动即中止」（成文于 `AGENTS.md`，2026-09-18），须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
 | b. 给 `LogisticsTrace` 加逃生口 | 物流响应未映射字段（`logisticsId` / 步骤明细）直通 | **否决**：`LogisticsTrace` 的 raw 只能落到 `PurchaseOrder.platform_raw`——与 `createPurchase` 的 raw **争用同一个单节点字段**，两个来源互相覆写。要容纳多端点回传，必须先把该字段升级成按端点分组，那是**反转 #55（已合入关闭）的形态决策**，属另一张票的事 |
 | **c. 都不扩（选定）** | `platform_raw` 唯一来源 = `createPurchase`；形态 = 单节点 | 与 #55 已落地的 `PurchaseOrder.platform_raw`（单节点 / 可空 / 不进 `required`）自洽；与仓内 raw 系同形先例 **4 处**（DTO 层 `OfferData.raw`——字段名即 `raw`、非 `platform_raw`；聚合根 `Spu` / `Order` / `OrderSnapshot`）形态一致；契约 breaking = 0；#46 的数据契约因此可定稿 |
 
