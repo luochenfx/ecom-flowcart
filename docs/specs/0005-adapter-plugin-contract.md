@@ -61,7 +61,7 @@ interface AuthCapability          // 可选：OAuth refresh 等平台专属凭�
 | **逃生口** | 平台字段未被标准模型覆盖 | **`platform_raw` JSONB 直通** + Listing 扩展（UCP metadata / Truto JSONata 同哲学） | 平台演进不被标准模型冻结，不另造映射 DSL |
 
 - 贡献者写 Adapter 只需懂「平台 API + 标准模型结构」，**不需要学一套映射 DSL**。
-- **逃生口的落点（#54 D1 决议，全文见 §10.1）**：`platform_raw` 是**聚合根上的单个 JSONB 节点**——`Spu.platform_raw` / `Order.platform_raw` / `OrderSnapshot.platform_raw` / `PurchaseOrder.platform_raw`——语义 = 「该记录对应的**那一次**平台响应的原文」，**不按端点分组**、不引入 `Map<端点, JsonNode>`。Adapter 侧的承载 DTO（`OfferData.raw` / `PurchaseResult.platformRaw`）只负责把原文交到 domain 边界，**落库由 domain 完成**。
+- **逃生口的落点（#54 D1 决议，全文见 §10.1）**：`platform_raw` 是**聚合根上的单个 JSONB 节点**（聚合根 **4 处**：`Spu.platform_raw` / `Order.platform_raw` / `OrderSnapshot.platform_raw` / `PurchaseOrder.platform_raw`）——语义 = 「该记录对应的**那一次**平台响应的原文」，**不按端点分组**、不引入 `Map<端点, JsonNode>`。Adapter 侧的承载 DTO（`OfferData.raw`；采购面为 `PurchaseResult.platformRaw`，**待 #46 落地**，见 §10.2.2）只负责把原文交到 domain 边界，**落库由 domain 完成**。
   - 推论（采购面）：`PurchaseOrder.platform_raw` 的**唯一来源 = `createPurchase` 响应**；`cancelPurchase` / `payPurchase` / `fetchLogistics` 三端点 v1 不回传未映射字段（论据与触发条件见 §10.1）。
 
 ## 4. 插件机制
@@ -106,7 +106,7 @@ AdapterException {
 core 提供测试基座，无真实账号（速卖通仅企业接入、个人无法实测）下保证 Adapter 质量基线：
 
 1. **双向 fixture**（硬门槛）：每平台 Adapter 必带两套 fixture——`platform→standard`（平台 JSON 响应 → 期望标准模型）与 `standard→platform`（标准模型 → 平台请求体）；core 提供**契约校验器**（用 #7/#8/#10 的 JSON Schema 校验 Adapter 输出/输入），fixture 即"贡献者承诺的映射语义"。
-   - **`schemas/` 承载边界 ⇒ 校验器能校验什么（#54 D2 决议，全文见 §10.2）**：契约校验器只能校验 `schemas/` 里**有**的东西——领域实体/值类型 与 消息这两类（§10.2）。平台**响应 / 请求形态**不进 `schemas/`（归 fixture + 契约 ObjectMapper 结构断言）；Adapter **自有 DTO 也不给自己造 schema**，其标准侧门 = 它内嵌 / 映射到的**领域 `$defs`**。据此，采购面的落点：`platform → standard` 标准侧经 `order.schema.json#/$defs/PurchaseOrder`（`platform_purchase_no` + `platform_raw`，由 #46 接入契约断言），`standard → platform` 请求侧经官方形态 fixture 逐字段比对（已在跑）。
+   - **`schemas/` 承载边界 ⇒ 校验器能校验什么（#54 D2 决议，全文见 §10.2）**：契约校验器只能校验 `schemas/` 里**有**的东西——领域实体/值类型 与 消息这两类（§10.2）。平台**响应 / 请求形态**不进 `schemas/`（归 fixture + 契约 ObjectMapper 结构断言）；Adapter **自有 DTO 也不给自己造 schema**，其标准侧门 = 它内嵌 / 映射到的**领域 `$defs`**。据此，采购面的落点：`platform → standard` 标准侧经 `order.schema.json#/$defs/PurchaseOrder`（`platform_purchase_no` + `platform_raw`，由 #46 接入契约断言），`standard → platform` 请求侧经官方形态 fixture 逐字段比对（**现 `createPurchase` 已在跑，其余端点待补**）。
 2. **模拟平台**：WireMock/本地 stub server 按 fixture 返回，Adapter 测试不依赖真实网络；VCR 回放（真实调用录制）作进阶可选，非门槛。
 3. **错误映射测试**（硬门槛）：至少 RETRYABLE（限流响应）/ NON_RETRYABLE（业务拒绝码）/ AMBIGUOUS（超时）各一例——验证 Adapter 正确翻译平台错误到统一异常契约。**只读 Capability 豁免**：AMBIGUOUS 语义是"写是否生效未知"（§6），纯只读能力（如 OfferFetch，v1 采集）超时/断连=安全重试，归 RETRYABLE、不产出 AMBIGUOUS——该子集免 AMBIGUOUS 示例；写路径 Capability（Publish/OrderSync/Address/Shipment）落地时补齐（首个 1688 Adapter 写能力 = #23）。
 4. **认证接入说明**（硬门槛）：README 写清开发者如何配置测试凭据。
@@ -174,9 +174,9 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 
 | 选项 | 内容 | 评估 |
 |---|---|---|
-| a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中「core 改动即中止」，须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
+| a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中本仓实践「core 改动即中止」（**该规则尚无成文条款**：`AGENTS.md` / `docs/adr/0007-adapter-plugin-contract.md` 均无原文，缺口见 [#54](https://github.com/luochenfx/ecom-flowcart/issues/54) 附录第 5 条），须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
 | b. 给 `LogisticsTrace` 加逃生口 | 物流响应未映射字段（`logisticsId` / 步骤明细）直通 | **否决**：`LogisticsTrace` 的 raw 只能落到 `PurchaseOrder.platform_raw`——与 `createPurchase` 的 raw **争用同一个单节点字段**，两个来源互相覆写。要容纳多端点回传，必须先把该字段升级成按端点分组，那是**反转 #55（已合入关闭）的形态决策**，属另一张票的事 |
-| **c. 都不扩（选定）** | `platform_raw` 唯一来源 = `createPurchase`；形态 = 单节点 | 与 #55 已落地的 `PurchaseOrder.platform_raw`（单节点 / 可空 / 不进 `required`）自洽；与仓内 `platform_raw` 系 4 处先例（`OfferData.raw` / `Spu` / `Order` / `OrderSnapshot`）同形；契约 breaking = 0；#46 的数据契约因此可定稿 |
+| **c. 都不扩（选定）** | `platform_raw` 唯一来源 = `createPurchase`；形态 = 单节点 | 与 #55 已落地的 `PurchaseOrder.platform_raw`（单节点 / 可空 / 不进 `required`）自洽；与仓内 raw 系同形先例 **4 处**（DTO 层 `OfferData.raw`——字段名即 `raw`、非 `platform_raw`；聚合根 `Spu` / `Order` / `OrderSnapshot`）形态一致；契约 breaking = 0；#46 的数据契约因此可定稿 |
 
 #### 10.1.2 为什么 `platform_raw` 不该承担「回执」职责
 
