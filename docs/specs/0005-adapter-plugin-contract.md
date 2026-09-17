@@ -2,7 +2,7 @@
 
 > 来源：[Grilling: 平台 Adapter 插件化契约](https://github.com/luochenfx/ecom-flowcart/issues/9)（Part of #1）
 > 依赖：[ADR-0004/#7（商品模型）](../adr/0004-product-catalog-model.md)（Listing 是铺货唯一输入）、[ADR-0005/#8（订单模型）](./0003-order-model.md)（单写入路径/游标/地址解密/RMA）、[ADR-0003/#11（幂等）](./0001-listing-publish-idempotency.md)（错误三类 + reconcile）、[ADR-0006/#10（消息）](../adr/0006-message-schema-and-versioning.md)（事件由 workflow 层发）。
-> 状态：v1 设计期决议。契约的机器可读形态是 **Java 能力接口**（代码级，非数据/消息 payload），接口签名随本规范落盘，实现期在 core 模块落成 `contract` 包；`schemas/` 目录保留给数据/消息契约，不为 Adapter 造伪 schema。
+> 状态：v1 设计期决议。契约的机器可读形态是 **Java 能力接口**（代码级，非数据/消息 payload），接口签名随本规范落盘，实现期在 core 模块落成 `contract` 包；`schemas/` 目录保留给数据/消息契约，不为 Adapter 造伪 schema（#54 已把这条精确化为可判定边界：什么能进 / 什么不能进，见 §10.2，校验器怎么用见 §7）。
 
 ## 1. 决策概览
 
@@ -43,7 +43,7 @@ interface PurchaseCapability      // 采购：下单 / 取消 / 支付 / 物流�
   PurchaseResult createPurchase(PurchaseDraft draft)       // 1688 fastCreateOrder（flow=saleproxy 一件代发）
   void cancelPurchase(String platformPurchaseNo)           // 1688 alibaba.trade.cancel（仅未付款可撤）
   void payPurchase(String platformPurchaseNo)              // 1688 免密代扣 / 收银台
-  LogisticsTrace fetchLogistics(String platformPurchaseNo)  // 1688 alibaba.logistics.trace
+  LogisticsTrace fetchLogistics(String platformPurchaseNo)  // 1688 alibaba.trade.getLogisticsTraceInfo.buyerView（见 §9.1 更正）
 
 interface AuthCapability          // 可选：OAuth refresh 等平台专属凭据刷新
   CredentialView refresh(CredentialView stale)  // 入/出参 = 解密内存对象；解密/加密归 Channel 域（§5）
@@ -61,6 +61,8 @@ interface AuthCapability          // 可选：OAuth refresh 等平台专属凭�
 | **逃生口** | 平台字段未被标准模型覆盖 | **`platform_raw` JSONB 直通** + Listing 扩展（UCP metadata / Truto JSONata 同哲学） | 平台演进不被标准模型冻结，不另造映射 DSL |
 
 - 贡献者写 Adapter 只需懂「平台 API + 标准模型结构」，**不需要学一套映射 DSL**。
+- **逃生口的落点（#54 D1 决议，全文见 §10.1）**：`platform_raw` 是**聚合根上的单个 JSONB 节点**——`Spu.platform_raw` / `Order.platform_raw` / `OrderSnapshot.platform_raw` / `PurchaseOrder.platform_raw`——语义 = 「该记录对应的**那一次**平台响应的原文」，**不按端点分组**、不引入 `Map<端点, JsonNode>`。Adapter 侧的承载 DTO（`OfferData.raw` / `PurchaseResult.platformRaw`）只负责把原文交到 domain 边界，**落库由 domain 完成**。
+  - 推论（采购面）：`PurchaseOrder.platform_raw` 的**唯一来源 = `createPurchase` 响应**；`cancelPurchase` / `payPurchase` / `fetchLogistics` 三端点 v1 不回传未映射字段（论据与触发条件见 §10.1）。
 
 ## 4. 插件机制
 
@@ -104,6 +106,7 @@ AdapterException {
 core 提供测试基座，无真实账号（速卖通仅企业接入、个人无法实测）下保证 Adapter 质量基线：
 
 1. **双向 fixture**（硬门槛）：每平台 Adapter 必带两套 fixture——`platform→standard`（平台 JSON 响应 → 期望标准模型）与 `standard→platform`（标准模型 → 平台请求体）；core 提供**契约校验器**（用 #7/#8/#10 的 JSON Schema 校验 Adapter 输出/输入），fixture 即"贡献者承诺的映射语义"。
+   - **`schemas/` 承载边界 ⇒ 校验器能校验什么（#54 D2 决议，全文见 §10.2）**：契约校验器只能校验 `schemas/` 里**有**的东西——领域实体/值类型 与 消息这两类（§10.2）。平台**响应 / 请求形态**不进 `schemas/`（归 fixture + 契约 ObjectMapper 结构断言）；Adapter **自有 DTO 也不给自己造 schema**，其标准侧门 = 它内嵌 / 映射到的**领域 `$defs`**。据此，采购面的落点：`platform → standard` 标准侧经 `order.schema.json#/$defs/PurchaseOrder`（`platform_purchase_no` + `platform_raw`，由 #46 接入契约断言），`standard → platform` 请求侧经官方形态 fixture 逐字段比对（已在跑）。
 2. **模拟平台**：WireMock/本地 stub server 按 fixture 返回，Adapter 测试不依赖真实网络；VCR 回放（真实调用录制）作进阶可选，非门槛。
 3. **错误映射测试**（硬门槛）：至少 RETRYABLE（限流响应）/ NON_RETRYABLE（业务拒绝码）/ AMBIGUOUS（超时）各一例——验证 Adapter 正确翻译平台错误到统一异常契约。**只读 Capability 豁免**：AMBIGUOUS 语义是"写是否生效未知"（§6），纯只读能力（如 OfferFetch，v1 采集）超时/断连=安全重试，归 RETRYABLE、不产出 AMBIGUOUS——该子集免 AMBIGUOUS 示例；写路径 Capability（Publish/OrderSync/Address/Shipment）落地时补齐（首个 1688 Adapter 写能力 = #23）。
 4. **认证接入说明**（硬门槛）：README 写清开发者如何配置测试凭据。
@@ -126,9 +129,9 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 |---|---|---|---|---|
 | `OfferFetchCapability` | `fetchOffer(SourceRef)` | `alibaba.product.get` | `productId`（form 入参）；出 SPU/SKU 规格价/图/库存 | 已实现（#19） |
 | `PurchaseCapability` | `createPurchase(PurchaseDraft)` | `alibaba.trade.fastCreateOrder` | `flow=saleproxy`（一件代发；`general`=普通批发）；`cargoParamList`（`alibaba.trade.fast.cargo[]`：`{offerId:Long, specId:32-hex, quantity}`）；`addressParam`（`alibaba.trade.fast.address`：`provinceText/cityText/areaText/address` 传**文本名**，官方免查地址码）；官方 `outOrderId` 可作幂等键但契约未承载；**仅同供应商可合单，跨供应商须拆单** | 已实现（#23） |
-| `PurchaseCapability` | `payPurchase(String)` | `alibaba.trade.pay.protocolPay.preparePay`（免密代扣）；无代扣协议退收银台 `alibaba.alipay.url.get`（链接 30 分钟有效） | 入参 `tradeWithholdPreparePayParam={"orderId":"<platformPurchaseNo>"}`；**契约返回 void，支付链接 / 支付态无法回传**——需要回传属契约扩展（走加法） | 已实现（#23） |
-| `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | `webSite=1688` + `tradeID` + `cancelReason`（官方枚举 `buyerCancel/sellerGoodsLack/other`；契约无"原因"入参 → 固定 `other`）；**仅未付款可撤**，已付款须走售后退款 | 已实现（#23） |
-| `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.trade.getLogisticsTraceInfo.buyerView`（namespace = `com.alibaba.logistics`；需申请权限）— **更正**：原表写的 `alibaba.logistics.trace` 来自二手来源，官方 apidoc 无此接口名 | `orderId` + `webSite=1688`（可选 `logisticsId`）；出参顶层 `logisticsTrace[]{logisticsId, logisticsBillNo, logisticsSteps[]}` | 已实现（#23） |
+| `PurchaseCapability` | `payPurchase(String)` | `alibaba.trade.pay.protocolPay.preparePay`（免密代扣）；无代扣协议退收银台 `alibaba.alipay.url.get`（链接 30 分钟有效） | 入参 `tradeWithholdPreparePayParam={"orderId":"<platformPurchaseNo>"}`；**契约返回 void，支付链接 / 支付态无法回传**——#54 决议：v1 不扩回传载体，登记为「待触发的契约扩展（走加法）」，触发条件见 §10.1.3 | 已实现（#23） |
+| `PurchaseCapability` | `cancelPurchase(String)` | `alibaba.trade.cancel` | `webSite=1688` + `tradeID` + `cancelReason`（官方枚举 `buyerCancel/sellerGoodsLack/other`；契约无"原因"入参 → 固定 `other`）；**仅未付款可撤**，已付款须走售后退款；**契约返回 void，撤销回执不落地**（#54 决议：v1 不扩，见 §10.1.1） | 已实现（#23） |
+| `PurchaseCapability` | `fetchLogistics(String)` | `alibaba.trade.getLogisticsTraceInfo.buyerView`（namespace = `com.alibaba.logistics`；需申请权限）— **更正**：原表写的 `alibaba.logistics.trace` 来自二手来源，官方 apidoc 无此接口名 | `orderId` + `webSite=1688`（可选 `logisticsId`）；出参顶层 `logisticsTrace[]{logisticsId, logisticsBillNo, logisticsSteps[]}`；**`LogisticsTrace` 自身无逃生口**（#54 决议：v1 不扩，理由见 §10.1.1） | 已实现（#23） |
 | `OrderSyncCapability` | `fetchOrders(SyncCursor)` / `fetchOrderDetail(String)` | `alibaba.trade.getBuyerOrderList`（增量分页）／`alibaba.trade.get.buyerView`（订单快照：金额/明细/运费/支付有效期/供应商） | 按时间或状态游标；#8「拉取为真相」单写入路径 | 待实现（#22 消费） |
 | `AuthCapability` | `refresh(CredentialView)` | OAuth2.0 换 `access_token`（约 2h 有效期） | 端点 `POST /auth/system.oauth2/getToken`（`grant_type=refresh_token` + `client_id/client_secret/refresh_token`）——**官方明确"调用 getToken 接口不需要签名"**，故不经 param2 签名网关；业务接口签名 = param2 `_aop_signature`（**HMAC-SHA1 大写 hex**，因子一 = `param2/1/{namespace}/{apiName}/{appKey}`，因子二 = 参数按 key 字典序 `key+value` 直连）——签名属平台知识，落 Adapter | 已实现（#23） |
 | `AddressCapability` | — | **不实现**：地址解密归销售侧凭据域（§5）；1688 侧只有辅助接口 `alibaba.trade.receiveAddress.get` / `alibaba.trade.addresscode.parse` | — | — |
@@ -157,3 +160,64 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 - 1688 买家侧**退款 / 售后**接口未核实（是否进 `RmaCapability`、粒度是否对齐 #8 的 OrderRMA `type=REFUND|DISPUTE`）——实测后回填。
 - 每平台 token bucket 的具体参数与退避档位——以平台官方限流文档为准微调（Adapter 内自治，不升 core）。
 - `platform_raw` 逃生口的保留/截断策略（体积与查询需求平衡）——实现期定。
+
+## 10. 决议记录
+
+### 10.1 采购面回传载体：四端点均不新增（#54 D1）
+
+**决议**：`cancelPurchase` / `payPurchase` 保持 `void`，`fetchLogistics` 保持 `LogisticsTrace`——这三个端点 v1 **都不新增 / 不扩展未映射字段的回传载体**。`platform_raw` 的**唯一来源 = `createPurchase` 响应**，形态取**单节点 `JsonNode`**（与 `OfferData.raw` 同形），**不是**「按端点分组」的 `Map<String, JsonNode>`。
+
+> 为什么不是 Map：若只有 `createPurchase` 回传，Map 的另外三个子键**永不为真**（#54 的 D1-c 已指出）；反过来说，**只有多端点回传成立时 Map 才是必需的**——而那时要改的是聚合根字段的承载语义（见 10.1.3 触发条件），不是现在先摆一个空壳。
+> 形态与落点由 [#55](https://github.com/luochenfx/ecom-flowcart/issues/55) 落地（`PurchaseOrder.platform_raw`：单节点 / 可空 / 不进 `required`，见 §3 逃生口行），本决议与其一致。
+
+#### 10.1.1 三个选项的取舍
+
+| 选项 | 内容 | 评估 |
+|---|---|---|
+| a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中「core 改动即中止」，须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
+| b. 给 `LogisticsTrace` 加逃生口 | 物流响应未映射字段（`logisticsId` / 步骤明细）直通 | **否决**：`LogisticsTrace` 的 raw 只能落到 `PurchaseOrder.platform_raw`——与 `createPurchase` 的 raw **争用同一个单节点字段**，两个来源互相覆写。要容纳多端点回传，必须先把该字段升级成按端点分组，那是**反转 #55（已合入关闭）的形态决策**，属另一张票的事 |
+| **c. 都不扩（选定）** | `platform_raw` 唯一来源 = `createPurchase`；形态 = 单节点 | 与 #55 已落地的 `PurchaseOrder.platform_raw`（单节点 / 可空 / 不进 `required`）自洽；与仓内 `platform_raw` 系 4 处先例（`OfferData.raw` / `Spu` / `Order` / `OrderSnapshot`）同形；契约 breaking = 0；#46 的数据契约因此可定稿 |
+
+#### 10.1.2 为什么 `platform_raw` 不该承担「回执」职责
+
+`cancel` / `pay` 的问题**不是**「响应里有未映射字段被丢」，而是**整个响应连回执都没有**（adapter 调用后直接丢弃响应体）。两类问题解法不同：
+
+- **未映射字段** → 逃生口（`platform_raw` JSONB 直通，服务审计 / 对账）；
+- **结果无回执** → 契约扩展（走加法）——新增返回类型，让工作流拿到「是否成功 / 收银台链接」这类**控制流要用的信号**。
+
+把后者塞进 `platform_raw`，等于让一个「审计兜底字段」承担编排控制流的输入：与 ADR-0007 的「逃生口 = `platform_raw` JSONB 直通」及本规范 §3 的定位不符，并会让 `PurchaseOrder.platform_raw` 的语义从「审计原文」漂移成「传输通道」。
+
+#### 10.1.3 登记为「待触发」的能力缺口（不是「忘了」）
+
+| 缺口 | 现状 | 触发条件（满足即在当时另立 Spec 票，按「走加法」扩大接口） |
+|---|---|---|
+| `payPurchase` 无回执：免密代扣是否成功、无代扣协议时的**收银台 / 签约链接**（30 分钟有效）都拿不到 | `void`（adapter 丢弃响应体） | #22 采购编排落地时，若收银台 / 签约链接需参与编排或回传用户 |
+| `cancelPurchase` 无回执：撤销成功与否只能由「抛不抛异常」推断 | `void` | 出现「撤销失败须分类处理」的编排需求时（届时须一并补 `cancelReason` 入参） |
+| `fetchLogistics` 未映射字段（`logisticsId` / 步骤明细）不入库 | `LogisticsTrace` 只有 `platformPurchaseNo` + `tracking` | 审计 / 对账确需物流响应全文时（须同时解决 10.1.1-b 的落点争用） |
+
+> v1 的兜底与既有先例一致：无经营背景约束下，支付 / 撤销的人工动作收敛到 1688 后台（同 §2「RMA 操作类 v1 不做，动作收敛到平台后台人工」）。
+
+### 10.2 `schemas/` 承载边界（#54 D2）
+
+**决议**：维持「`schemas/` 只承载**标准模型 / 消息**」。「不为 Adapter 造伪 schema」在 #54 精确化为**可判定规则**：
+
+| 允许进 `schemas/` | 判定依据（名字从哪来） | 现例 |
+|---|---|---|
+| ① **领域实体 / 值类型** | `core` 的 domain model | `order.schema.json`（`$defs.Order` / `PurchaseOrder` / `Tracking` …）、`product-catalog.schema.json`（`$defs.Spu` / `Sku` …） |
+| ② **消息 envelope / payload** | ADR-0006 的消息契约 | `message.schema.json`（`$defs.Envelope` / `OrderPaidPayload` …） |
+
+| 不得进 `schemas/` | 判定依据 | 覆盖手段 |
+|---|---|---|
+| 平台**响应 / 请求形态** | 名字是平台端点名或平台响应名（如 `FastCreateOrderResponse`） | adapter 侧 fixture（`adapter-1688/src/test/resources/fixtures/1688-trade-*.json`）+ 契约 ObjectMapper 结构断言 |
+| Adapter **自有 DTO 的独立 schema** | 名字是 core `contract.dto` 包类型（`PurchaseResult` / `LogisticsTrace` / `OfferData` / `PurchaseDraft`） | **不给自己造 schema**；其标准侧门 = 它内嵌 / 映射到的**领域 `$defs`** |
+
+#### 10.2.1 拒绝 D2-a / D2-c 的论据
+
+- **D2-a（允许 `schemas/` 承载平台响应形态）不可接受**：① 与本规范状态行的既有决议正面冲突；② 平台响应形态**随平台演进**（端点改名、字段增删），固化进 schema = 把「平台会变」写进契约兼容性约束，而逃生口的设计初衷恰恰是「平台演进不被标准模型冻结」（§3）；③ 扩散面不止本文件——`docs/specs/0006` 状态行写着「`schemas/` 目录保留给数据/消息契约（**与 #9 同决策**）」，改这条政策要连它一起改。
+- **D2-c（只给标准模型 `PurchaseResult` 定义 schema）不可接受**：它把「标准模型」误读成「标准侧的任何 DTO」。`PurchaseResult` 是 Adapter 的**进出参载体**，不是领域实体；仓内同族 contract DTO（`LogisticsTrace` / `OfferData` / `PurchaseDraft`）**一个都没有自有 schema**——单给 `PurchaseResult` 造一个，要么制造孤例，要么被迫给另外三个也造（4 份「标准侧伪 schema」，正是状态行要挡的东西）。**标准侧的校验跟着领域 `$defs` 走**：`Tracking` 已经这么用了（`Ali1688TradeJsonMapperTest` 的 `ContractAssertions.assertValid` 直接取 `order.schema.json#/$defs/Tracking`）。
+
+#### 10.2.2 对 #46 的直接含义
+
+- **不建** `schemas/purchase-result.schema.json`；采购面标准侧的 schema 门已由 #55 落地的 `order.schema.json#/$defs.PurchaseOrder`（`platform_purchase_no` + `platform_raw` → `$ref RawJson`）承担，免造新文件、免扩 `schemas/` 概念。
+- #46 的「Schema 资产」交付物 = **在该 `$defs.PurchaseOrder` 上挂契约断言**（标准侧），而非新建 schema 文件。
+- #46 改 `PurchaseResult` 时按 10.1 的形态：**单节点 `JsonNode platformRaw`**、可空语义写 `@param` javadoc（`core-contracts` 零 Spring、无 `@Nullable`）、不进 `required`。
