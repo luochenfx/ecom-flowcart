@@ -44,6 +44,7 @@ PurchaseOrder (一等实体，自有生命周期/workflow，Order → 1:N)
 ├── supplier_ref (1688 卖家)         # 一采购单仅限同供应商（supplier_ref.platform = const "1688"）
 ├── platform_purchase_no (1688 单号) # platform* = 本记录所属平台（1688）的号，非销售平台
 ├── platform_status (+time)          # 1688 侧原始状态旁路，不做翻译
+├── platform_raw (JSONB)             # 1688 响应原文逃生口（标准模型未覆盖字段直通，审计/对账）
 ├── purchase_status                  # 采购 canonical 轴（PENDING_PAYMENT/PAID/SHIPPED/…）
 ├── lines[] (order_line_ref → 销售行) 
 ├── amount / tracking[]              # 供应商发货物流（logistics.trace 回填）

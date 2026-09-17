@@ -44,8 +44,9 @@ PR checklist 见文末「贡献门槛」。
   → `townText`（街道）与 `phone`（固话）无源可填，按官方示例可缺省处理；电话落在 `mobile`。
 - **幂等键**：官方 `fastCreateOrder` 支持 `outOrderId`（外部单号，可反查），但 `PurchaseDraft`
   未承载该字段 → 本票不传；需要时属契约扩展。
-- **采购面无 `platform_raw` 逃生口**：`PurchaseResult` 契约只定义 `platform_purchase_no`，
-  订单金额 / 运费 / 支付有效期等未覆盖字段需经 `alibaba.trade.get.buyerView` 订单快照补齐（#22 范畴）。
+- **采购面 adapter 侧无 `platform_raw` 逃生口**：`PurchaseResult` 契约只定义 `platform_purchase_no`，
+  adapter 侧没有承载未映射字段的位置；订单金额 / 运费 / 支付有效期等在 domain 侧的既定落点已由
+  #55 定为 `PurchaseOrder.platform_raw`（值侧填充归 #46）。
 - **仅同供应商可合单**：跨供应商须由 order 域拆单后逐单调用（官方错误码提示重复货品需累加处理）。
 - **`fetchLogistics` 的 `Tracking.company` 恒空**：官方出参（`logisticsId / logisticsBillNo /
   logisticsSteps`）不含承运商名称，不臆造；`status` 取最后一个节点的 `remark`。

@@ -81,6 +81,7 @@
         "platform_purchase_no": { "type": "string", "description": "1688 采购单号（flow=saleproxy 下单返回）" },
         "purchase_status": { "$ref": "#/$defs/PurchaseStatus", "description": "采购 canonical 状态轴（独立于销售履约轴）" },
         "platform_status": { "type": ["string", "null"], "description": "1688 侧原始状态旁路" },
+        "platform_raw": { "description": "1688 采购响应原文（JSONB），审计/对账用；标准模型未覆盖字段的逃生口", "$ref": "#/$defs/RawJson" },
         "lines": { "type": "array", "items": { "$ref": "#/$defs/PurchaseLine" } },
         "amount": { "$ref": "#/$defs/Money", "description": "采购金额（1688 计价）" },
         "tracking": { "type": "array", "items": { "$ref": "#/$defs/Tracking" }, "description": "供应商发货物流（logistics.trace 取回）" },
