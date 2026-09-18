@@ -175,7 +175,7 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 | 选项 | 内容 | 评估 |
 |---|---|---|
 | a. 扩 `cancelPurchase` / `payPurchase` 返回类型 | 四个端点都能回传未映射字段 | **否决**：① 属 `core-contracts` **方法签名变更** → 命中本仓条款「core 改动即中止」（成文于 `AGENTS.md`，2026-09-18），须另立 Spec 票；② 其消费者（采购编排）尚未建（#22），此时定回传载体形态是猜的——与 #55 否决「只做载体、落点留给 #22」同一条理由；③ 落点争用（见选项 b） |
-| b. 给 `LogisticsTrace` 加逃生口 | 物流响应未映射字段（`logisticsId` / 步骤明细）直通 | **否决**：`LogisticsTrace` 的 raw 只能落到 `PurchaseOrder.platform_raw`——与 `createPurchase` 的 raw **争用同一个单节点字段**，两个来源互相覆写。要容纳多端点回传，必须先把该字段升级成按端点分组，那是**反转 #55（已合入关闭）的形态决策**，属另一张票的事 |
+| b. 给 `LogisticsTrace` 加逃生口 | 物流响应未映射字段（`logisticsId` / 步骤明细）直通 | **否决（决定性理由是 ①）**：无论落点选哪里，都属 `core-contracts` 字段 / `schemas/**` 结构变更 ⇒ 须另立 Spec 票。落点亦只有两个现实备选（销售侧 `Order` / `OrderSnapshot` 的 `platform_raw` 语义是**销售平台**原文，与此不同源，候选不成立）：① 落到 `PurchaseOrder.platform_raw` ⇒ 与 `createPurchase` 的 raw **争用同一个单节点字段**，两个来源互相覆写（要容纳多端点回传，得先把该字段升级成按端点分组，那是**反转 #55（已合入关闭）的形态决策**）；② 新增 `Tracking` 记录级字段（`Tracking` 是领域记录：`core-contracts/.../order/model/Tracking.java` + `schemas/order.schema.json` 的 `$defs.Tracking`；语义与 §3「该记录对应的**那一次**响应的原文」同构，也不与采购单字段争用）⇒ 但 `fetchLogistics` **一次响应覆盖多条 tracking**，per-`Tracking` 落点会把同一份原文按 tracking 条数**复制 N 份**（体积 × N）。两条路都属另一张票 |
 | **c. 都不扩（选定）** | `platform_raw` 唯一来源 = `createPurchase`；形态 = 单节点 | 与 #55 已落地的 `PurchaseOrder.platform_raw`（单节点 / 可空 / 不进 `required`）自洽；与仓内 raw 系同形先例 **4 处**（DTO 层 `OfferData.raw`——字段名即 `raw`、非 `platform_raw`；聚合根 `Spu` / `Order` / `OrderSnapshot`）形态一致；契约 breaking = 0；#46 的数据契约因此可定稿 |
 
 #### 10.1.2 为什么 `platform_raw` 不该承担「回执」职责
@@ -193,7 +193,7 @@ core 提供测试基座，无真实账号（速卖通仅企业接入、个人无
 |---|---|---|
 | `payPurchase` 无回执：免密代扣是否成功、无代扣协议时的**收银台 / 签约链接**（30 分钟有效）都拿不到 | `void`（adapter 丢弃响应体） | #22 采购编排落地时，若收银台 / 签约链接需参与编排或回传用户 |
 | `cancelPurchase` 无回执：撤销成功与否只能由「抛不抛异常」推断 | `void` | 出现「撤销失败须分类处理」的编排需求时（届时须一并补 `cancelReason` 入参） |
-| `fetchLogistics` 未映射字段（`logisticsId` / 步骤明细）不入库 | `LogisticsTrace` 只有 `platformPurchaseNo` + `tracking` | 审计 / 对账确需物流响应全文时（须同时解决 10.1.1-b 的落点争用） |
+| `fetchLogistics` 未映射字段（`logisticsId` / 步骤明细）不入库 | `LogisticsTrace` 只有 `platformPurchaseNo` + `tracking` | 审计 / 对账确需物流响应全文时（须同时解决 10.1.1-b 的落点问题：争用覆写，或原文按 tracking 条数重复） |
 
 > v1 的兜底与既有先例一致：无经营背景约束下，支付 / 撤销的人工动作收敛到 1688 后台（同 §2「RMA 操作类 v1 不做，动作收敛到平台后台人工」）。
 
