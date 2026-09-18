@@ -60,3 +60,5 @@
 
 <!-- 在这里写你的手写注解：本区及之后的内容不会被 /setup-workflow-labels 覆盖。
      典型用途：说明某个 role 在本 repo 的特殊语义、迁移约定、或标注弃用的 label。 -->
+
+- **审查闸门的分档判据** —— 哪些意见够格置 `review/changes-requested`（「审查不通过」）、哪些只发 comment 不拦合并，见 `docs/agents/review-gate.md`。**等级照报，只是不再拦门。**
