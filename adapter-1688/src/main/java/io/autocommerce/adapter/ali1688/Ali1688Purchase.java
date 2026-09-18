@@ -19,8 +19,9 @@ import java.util.Map;
  *       {@code general} 为普通批发）+ {@code cargoParamList} + {@code addressParam}；
  *       官方「仅同供应商可合单」——跨供应商须由 order 域拆单后逐单调用；</li>
  *   <li><b>支付</b> {@code alibaba.trade.pay.protocolPay.preparePay}（免密代扣）；
- *       未开通免密时平台返回签约 / 收银台链接，<b>契约返回 void 无法回传</b>——
- *       是否需要把支付链接回传属契约扩展（ADR-0007 走加法），本票不改 core；</li>
+ *       未开通免密时平台返回签约 / 收银台链接，<b>契约返回 void 无法回传</b>。
+ *       #54 决议：v1 不回传（属「待触发的契约扩展（走加法）」，触发条件见 specs/0005 §10.1.3），
+ *       故此处丢弃响应体是既定行为、不是遗漏；</li>
  *   <li><b>撤销</b> {@code alibaba.trade.cancel}：<b>仅未付款可撤</b>（已付款须走售后退款）；
  *       {@code cancelReason} 官方取值 {@code buyerCancel / sellerGoodsLack / other}，
  *       契约无"原因"入参 → 固定 {@code other}；</li>
