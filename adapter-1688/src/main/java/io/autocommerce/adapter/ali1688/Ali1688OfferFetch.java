@@ -22,10 +22,12 @@ import java.util.Map;
  * OAuth 协议归属 #23（AuthCapability + 认证 README）按官方文档实测补全；本子集以
  * 1688-shaped fixture（WireMock）验证结构转换与错误映射，无真实账号可跑。
  *
- * <p>错误语义（specs/0005 §6）：HTTP 429 / 5xx = RETRYABLE（platformCode = HTTP 状态码）；
- * 其余 4xx = NON_RETRYABLE；业务拒绝（success=false）= NON_RETRYABLE（errorCode/errorMsg）；
- * 传输层 IO 异常 = RETRYABLE —— offer 拉取是只读操作，超时/断连重试安全（不属 AMBIGUOUS，
- * AMBIGUOUS 语义为"写是否生效未知"，此处不适用）。非 AdapterException 的异常 = bug。
+ * <p>错误语义（specs/0005 §6，HTTP 状态码判定统一走 {@link Ali1688ErrorMapping}）：HTTP 429 / 5xx
+ * = RETRYABLE（platformCode = HTTP 状态码）；其余 4xx = NON_RETRYABLE；业务拒绝（success=false）
+ * 按官方错误码定性——平台侧临时故障码（{@code 500*} / {@code *SYSTEM_ERROR*} …）= RETRYABLE，
+ * 其余（如 {@code isv.*}）= NON_RETRYABLE（errorCode/errorMsg）；传输层 IO 异常 = RETRYABLE ——
+ * offer 拉取是只读操作，超时/断连重试安全（不属 AMBIGUOUS，AMBIGUOUS 语义为"写是否生效未知"，
+ * 此处不适用）。非 AdapterException 的异常 = bug。
  */
 public final class Ali1688OfferFetch implements OfferFetchCapability {
 
@@ -70,16 +72,8 @@ public final class Ali1688OfferFetch implements OfferFetchCapability {
             throw AdapterException.retryable("interrupted", "请求 1688 offer 被中断");
         }
 
-        int status = response.statusCode();
-        if (status == 429 || status >= 500) {
-            throw AdapterException.retryable(Integer.toString(status),
-                    "1688 网关临时故障/限流（HTTP " + status + "）",
-                    Ali1688Http.retryAfter(response));
-        }
-        if (status < 200 || status >= 300) {
-            throw AdapterException.nonRetryable(Integer.toString(status),
-                    "1688 网关拒绝（HTTP " + status + "）");
-        }
+        Ali1688ErrorMapping.throwIfHttpFailure(response.statusCode(), "1688 网关",
+                Ali1688Http.retryAfter(response));
         return mapper.map(response.body());
     }
 

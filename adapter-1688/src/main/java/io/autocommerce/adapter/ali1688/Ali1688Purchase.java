@@ -39,6 +39,10 @@ public final class Ali1688Purchase implements PurchaseCapability {
     /** 官方 cancelReason 取值之一；契约 cancelPurchase 无"原因"入参，固定为 other。 */
     static final String CANCEL_REASON_OTHER = "other";
 
+    /** 缺必填参数消息（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。 */
+    private static final String MISSING_PARAM_ERROR_CODE = "missing-required-field";
+    private static final String MISSING_PARAM_SUFFIX = "（platformPurchaseNo）";
+
     static final String PARAM_FLOW = "flow";
     static final String PARAM_CARGO_PARAM_LIST = "cargoParamList";
     static final String PARAM_ADDRESS_PARAM = "addressParam";
@@ -79,7 +83,8 @@ public final class Ali1688Purchase implements PurchaseCapability {
     @Override
     public void cancelPurchase(String platformPurchaseNo) throws AdapterException {
         Map<String, String> params = new LinkedHashMap<>();
-        params.put(PARAM_TRADE_ID, require(platformPurchaseNo, "tradeID"));
+        params.put(PARAM_TRADE_ID, Ali1688ErrorMapping.requireNonBlank(platformPurchaseNo,
+                MISSING_PARAM_ERROR_CODE, "1688 请求缺少必填参数 tradeID" + MISSING_PARAM_SUFFIX));
         params.put(PARAM_CANCEL_REASON, CANCEL_REASON_OTHER);
         gateway.call(Ali1688Api.TRADE_CANCEL, params);
     }
@@ -94,16 +99,9 @@ public final class Ali1688Purchase implements PurchaseCapability {
     @Override
     public LogisticsTrace fetchLogistics(String platformPurchaseNo) throws AdapterException {
         Map<String, String> params = new LinkedHashMap<>();
-        params.put(PARAM_ORDER_ID, require(platformPurchaseNo, "orderId"));
+        params.put(PARAM_ORDER_ID, Ali1688ErrorMapping.requireNonBlank(platformPurchaseNo,
+                MISSING_PARAM_ERROR_CODE, "1688 请求缺少必填参数 orderId" + MISSING_PARAM_SUFFIX));
         JsonNode body = gateway.call(Ali1688Api.LOGISTICS_TRACE_BUYER_VIEW, params);
         return json.toLogisticsTrace(platformPurchaseNo, body);
-    }
-
-    private static String require(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw AdapterException.nonRetryable("missing-required-field",
-                    "1688 请求缺少必填参数 " + field + "（platformPurchaseNo）");
-        }
-        return value;
     }
 }

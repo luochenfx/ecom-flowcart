@@ -101,11 +101,8 @@ public final class Ali1688Auth implements AuthCapability {
         }
 
         int status = response.statusCode();
-        if (status == 429 || status >= 500) {
-            throw AdapterException.retryable(Integer.toString(status),
-                    "1688 换票端点临时故障/限流（HTTP " + status + "）",
-                    Ali1688Http.retryAfter(response));
-        }
+        Ali1688ErrorMapping.throwIfHttpTransientFailure(status, "1688 换票端点",
+                Ali1688Http.retryAfter(response));
         if (status < 200 || status >= 300) {
             JsonNode body = parse(response.body());
             throw AdapterException.nonRetryable(

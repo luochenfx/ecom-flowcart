@@ -26,9 +26,10 @@ import java.util.List;
  * categoryId / categoryName / attributes[] 为防御性可选读取——真实 API 字段名待 #23 实测校准。
  * 其余字段一律不逐字段建模，随 {@code OfferData.raw}（= offer 子树）直通不丢。
  *
- * <p>失败语义：业务拒绝（success=false）抛 {@code AdapterException} NON_RETRYABLE
- * （errorCode/errorMsg 落 platformCode/message）；结构/解析失败同样 NON_RETRYABLE
- * （= bug 或格式不兼容，不是临时故障）。
+ * <p>失败语义（specs/0005 §6，判定统一走 {@link Ali1688ErrorMapping}）：业务拒绝（success=false）
+ * 按官方错误码定性——平台侧临时故障码（{@code 500*} / {@code *SYSTEM_ERROR*} …）= RETRYABLE，
+ * 其余（如 {@code isv.*}）= NON_RETRYABLE（errorCode/errorMsg 落 platformCode/message）；
+ * 结构/解析失败同样 NON_RETRYABLE（= bug 或格式不兼容，不是临时故障）。
  */
 public final class Ali1688OfferJsonMapper {
 
@@ -45,7 +46,7 @@ public final class Ali1688OfferJsonMapper {
     public OfferData map(String responseBody) {
         JsonNode body = parse(responseBody);
         if (isBusinessError(body)) {
-            throw AdapterException.nonRetryable(
+            throw Ali1688ErrorMapping.businessRejection(
                     body.path("errorCode").asText("unknown"),
                     body.path("errorMsg").asText("1688 业务错误"));
         }
