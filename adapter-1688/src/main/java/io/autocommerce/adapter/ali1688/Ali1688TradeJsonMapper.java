@@ -112,6 +112,14 @@ public final class Ali1688TradeJsonMapper {
      * {@code alibaba.trade.fast.result}，Java SDK 示例取 {@code result.getResult().getOrderId()}。
      * 官方未给出参 JSON 示例——{@code orderId} 以「值节点或数组首元素」两种形态防御性读取，
      * <b>待沙箱真实响应校准</b>（校准点集中在本方法）。
+     *
+     * <p><b>逃生口（#46 落地）</b>：{@code platformRaw} = {@code result} <b>子树原样</b>
+     * （单节点 deepCopy），与 {@link io.autocommerce.core.contract.dto.OfferData#raw()} 同形——承载
+     * 标准模型未覆盖的字段（{@code totalAmount} / {@code freight} / {@code flowaprroveUrl} /
+     * {@code gmtCreate} / {@code gmtModified} / {@code status} 等）直通不丢，由 domain 侧落
+     * {@code PurchaseOrder.platform_raw}。取 {@code result} 子树而非整棵 body，与
+     * {@code Ali1688OfferJsonMapper} 的 {@code unwrap()} 口径一致（{@code success}/{@code code}/
+     * {@code message} 是传输信封，不是该记录的平台响应原文）。
      */
     public PurchaseResult toPurchaseResult(JsonNode body) {
         JsonNode result = body.path("result");
@@ -123,7 +131,9 @@ public final class Ali1688TradeJsonMapper {
             throw AdapterException.nonRetryable("missing-order-id",
                     "下单响应缺少 result.orderId（官方形态待沙箱校准）");
         }
-        return new PurchaseResult(orderId.asText());
+        // 逃生口：result 子树原样（含 orderId 与全部未映射字段），单节点直通
+        JsonNode platformRaw = result.isObject() ? result.deepCopy() : null;
+        return new PurchaseResult(orderId.asText(), platformRaw);
     }
 
     /**
