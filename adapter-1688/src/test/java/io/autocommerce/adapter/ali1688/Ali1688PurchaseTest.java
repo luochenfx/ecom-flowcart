@@ -63,6 +63,11 @@ class Ali1688PurchaseTest {
     private static final String CASE_SERVICE_UNAVAILABLE = "case-service-unavailable";
     private static final String CASE_TP_EXCEPTION = "case-tp-exception";
     private static final String CASE_TOO_MANY_REQUESTS = "case-too-many-requests";
+    private static final String CASE_SYSTEM_ERROR = "case-system-error";
+    private static final String CASE_SYSTEM_BUSY = "case-system-busy";
+    private static final String CASE_ACCESS_LIMIT = "case-access-limit";
+    private static final String CASE_FLOW_LIMIT = "case-flow-limit";
+    private static final String CASE_QPS = "case-qps";
 
     private static WireMockServer server;
     private static Ali1688Purchase purchase;
@@ -116,6 +121,30 @@ class Ali1688PurchaseTest {
                 .withBody("{\"success\":false,\"code\":\"TOO_MANY_REQUESTS\","
                         + "\"message\":\"too many requests\"}"));
 
+        // —— #45 补齐 classify() 剩余 5 项平台侧子串：SYSTEM_ERROR / SYSTEM_BUSY /
+        // ACCESS_LIMIT / FLOW_LIMIT / QPS。与上三项同档（RETRYABLE），
+        // 每项独立 stub（不折叠成 for 循环，保证 stub setup 行数与常量数一一对应）。 ——
+        stub(CREATE_PATH, CASE_SYSTEM_ERROR, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"SYSTEM_ERROR\","
+                        + "\"message\":\"system error\"}"));
+        stub(CREATE_PATH, CASE_SYSTEM_BUSY, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"SYSTEM_BUSY\","
+                        + "\"message\":\"system busy\"}"));
+        stub(CREATE_PATH, CASE_ACCESS_LIMIT, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"ACCESS_LIMIT\","
+                        + "\"message\":\"access limit\"}"));
+        stub(CREATE_PATH, CASE_FLOW_LIMIT, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"FLOW_LIMIT\","
+                        + "\"message\":\"flow limit\"}"));
+        stub(CREATE_PATH, CASE_QPS, aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"success\":false,\"code\":\"QPS\","
+                        + "\"message\":\"qps limit\"}"));
+
         purchase = newPurchase();
     }
 
@@ -167,10 +196,11 @@ class Ali1688PurchaseTest {
 
     /**
      * 官方错误码平台侧临时故障 → RETRYABLE（不是业务拒绝）。
-     * 涵盖 {@code 500*} / {@code *SYSTEM_ERROR*}（含 {@code SYSTEM_BUSY}）以及 README 漏列后补齐的
-     * {@code SERVICE_UNAVAILABLE} / {@code TP_EXCEPTION} / {@code TOO_MANY_REQUESTS}——
-     * 一并由 {@code Ali1688Gateway.classify()} 识别为 RETRYABLE。参数化钉齐代码 ↔ 文档 ↔ 测试，
-     * PR #42 review 前 {@code 500} 单独一个测试、其余三项完全无覆盖。
+     * 覆盖 {@code Ali1688Gateway.classify()} 全部 9 个平台侧子串：{@code 500*} / {@code *SYSTEM_ERROR*} /
+     * {@code *SYSTEM_BUSY*} / {@code *SERVICE_UNAVAILABLE*} / {@code *TP_EXCEPTION*} /
+     * {@code *ACCESS_LIMIT*} / {@code *FLOW_LIMIT*} / {@code *QPS*} / {@code *TOO_MANY_REQUESTS*}
+     * （#45 起 4/9 → 9/9）。参数化钉齐代码 ↔ README §5 ↔ 测试；
+     * PR #42 review 前 {@code 500} 单独一个测试、其余八项完全无覆盖。
      */
     @ParameterizedTest
     @MethodSource("platformSideErrorCodes")
@@ -187,7 +217,12 @@ class Ali1688PurchaseTest {
                 Arguments.of(CASE_PLATFORM_ERROR, "500"),
                 Arguments.of(CASE_SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE"),
                 Arguments.of(CASE_TP_EXCEPTION, "TP_EXCEPTION"),
-                Arguments.of(CASE_TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS"));
+                Arguments.of(CASE_TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS"),
+                Arguments.of(CASE_SYSTEM_ERROR, "SYSTEM_ERROR"),
+                Arguments.of(CASE_SYSTEM_BUSY, "SYSTEM_BUSY"),
+                Arguments.of(CASE_ACCESS_LIMIT, "ACCESS_LIMIT"),
+                Arguments.of(CASE_FLOW_LIMIT, "FLOW_LIMIT"),
+                Arguments.of(CASE_QPS, "QPS"));
     }
 
     @Test
