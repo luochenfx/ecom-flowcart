@@ -33,8 +33,15 @@ import java.util.List;
  *
  * <p>请求体构造不出来（缺必填项）→ NON_RETRYABLE（不是"值不准"，见契约缺口判定口径）；
  * 响应缺关键字段同样 NON_RETRYABLE（= 形态与文档不符，重试无意义）。
+ * 逐项必填校验的 errorCode / 异常构造统一走 {@link Ali1688ErrorMapping#requireNonBlank}，
+ * 消息文案在本类按字段拼装（errorCode = {@code missing-required-field}）。
  */
 public final class Ali1688TradeJsonMapper {
+
+    /** 缺必填字段的 errorCode 与消息骨架（errorCode / 判定统一走 {@link Ali1688ErrorMapping}）。 */
+    private static final String MISSING_FIELD_ERROR_CODE = "missing-required-field";
+    private static final String MISSING_FIELD_PREFIX = "1688 请求体缺少必填字段 ";
+    private static final String MISSING_FIELD_SUFFIX = "（cargoParamList/addressParam 逐项必填）";
 
     private final ObjectMapper mapper;
 
@@ -63,7 +70,8 @@ public final class Ali1688TradeJsonMapper {
             }
             ObjectNode node = cargo.addObject();
             node.set("offerId", offerIdNode(item.sourceOfferId()));
-            node.put("specId", require(item.sourceSpecId(), "specId"));
+            node.put("specId", Ali1688ErrorMapping.requireNonBlank(item.sourceSpecId(),
+                    MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "specId" + MISSING_FIELD_SUFFIX));
             if (item.quantity() == null || item.quantity() <= 0) {
                 throw AdapterException.nonRetryable("missing-quantity",
                         "采购行 quantity 必须 > 0，实为 " + item.quantity());
@@ -86,12 +94,18 @@ public final class Ali1688TradeJsonMapper {
             throw AdapterException.nonRetryable("missing-address", "addressParam 必填（收货地址为空）");
         }
         ObjectNode address = mapper.createObjectNode();
-        address.put("fullName", require(recipient.receiverName(), "fullName"));
-        address.put("mobile", require(recipient.receiverPhone(), "mobile"));
-        address.put("provinceText", require(recipient.province(), "provinceText"));
-        address.put("cityText", require(recipient.city(), "cityText"));
-        address.put("areaText", require(recipient.district(), "areaText"));
-        address.put("address", require(recipient.detail(), "address"));
+        address.put("fullName", Ali1688ErrorMapping.requireNonBlank(recipient.receiverName(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "fullName" + MISSING_FIELD_SUFFIX));
+        address.put("mobile", Ali1688ErrorMapping.requireNonBlank(recipient.receiverPhone(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "mobile" + MISSING_FIELD_SUFFIX));
+        address.put("provinceText", Ali1688ErrorMapping.requireNonBlank(recipient.province(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "provinceText" + MISSING_FIELD_SUFFIX));
+        address.put("cityText", Ali1688ErrorMapping.requireNonBlank(recipient.city(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "cityText" + MISSING_FIELD_SUFFIX));
+        address.put("areaText", Ali1688ErrorMapping.requireNonBlank(recipient.district(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "areaText" + MISSING_FIELD_SUFFIX));
+        address.put("address", Ali1688ErrorMapping.requireNonBlank(recipient.detail(),
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "address" + MISSING_FIELD_SUFFIX));
         if (recipient.postalCode() != null && !recipient.postalCode().isBlank()) {
             address.put("postCode", recipient.postalCode());
         }
@@ -101,7 +115,8 @@ public final class Ali1688TradeJsonMapper {
     /** 免密代扣入参 {@code tradeWithholdPreparePayParam}（官方：{@code {"orderId":"订单号"}}）。 */
     public String tradeWithholdPreparePayParam(String platformPurchaseNo) {
         ObjectNode param = mapper.createObjectNode();
-        param.put("orderId", require(platformPurchaseNo, "orderId"));
+        param.put("orderId", Ali1688ErrorMapping.requireNonBlank(platformPurchaseNo,
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "orderId" + MISSING_FIELD_SUFFIX));
         return param.toString();
     }
 
@@ -169,17 +184,10 @@ public final class Ali1688TradeJsonMapper {
      * 全数字 → 数值节点（贴合官方类型）；否则文本节点（不让非数字 id 变成非法 JSON 数值）。
      */
     private JsonNode offerIdNode(String sourceOfferId) {
-        String offerId = require(sourceOfferId, "offerId");
+        String offerId = Ali1688ErrorMapping.requireNonBlank(sourceOfferId,
+                MISSING_FIELD_ERROR_CODE, MISSING_FIELD_PREFIX + "offerId" + MISSING_FIELD_SUFFIX);
         return offerId.chars().allMatch(Character::isDigit)
                 ? mapper.getNodeFactory().numberNode(Long.parseLong(offerId))
                 : mapper.getNodeFactory().textNode(offerId);
-    }
-
-    private static String require(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw AdapterException.nonRetryable("missing-required-field",
-                    "1688 请求体缺少必填字段 " + field + "（cargoParamList/addressParam 逐项必填）");
-        }
-        return value;
     }
 }

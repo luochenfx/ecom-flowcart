@@ -97,6 +97,23 @@ class Ali1688OfferJsonMapperTest {
     }
 
     @Test
+    void platformSideBusinessCodeMapsToRetryable() {
+        // #44 行为变更：HTTP 200 + success=false + 平台侧错误码（500* / SYSTEM_ERROR …）→ RETRYABLE
+        // （改造前一律 NON_RETRYABLE）。非平台侧（isv.*）→ NON_RETRYABLE 的对照见
+        // businessErrorMapsToNonRetryable。
+        for (String code : new String[] {"500", "SYSTEM_ERROR", "SERVICE_UNAVAILABLE"}) {
+            String wrapper = "{\"success\":false,\"errorCode\":\"" + code + "\","
+                    + "\"errorMsg\":\"平台侧临时故障\"}";
+
+            assertThatThrownBy(() -> mapper.map(wrapper))
+                    .isInstanceOfSatisfying(AdapterException.class, e -> {
+                        assertThat(e.kind()).isEqualTo(AdapterErrorKind.RETRYABLE);
+                        assertThat(e.platformCode()).isEqualTo(code);
+                    });
+        }
+    }
+
+    @Test
     void parseSpecTextHandlesFullWidthAndSkipsUnparsableGroups() {
         // 半角/全角分隔符混用；无冒号分组跳过（原文不丢：specText 仍在 OfferData）
         List<SpecValue> specs = Ali1688OfferJsonMapper.parseSpecText("颜色:红色；尺码：L");

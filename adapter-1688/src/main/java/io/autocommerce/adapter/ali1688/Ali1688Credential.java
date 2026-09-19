@@ -37,10 +37,16 @@ public record Ali1688Credential(String appKey, String appSecret, String accessTo
     static final String KEY_ACCESS_TOKEN = "access_token";
     static final String KEY_REFRESH_TOKEN = "refresh_token";
 
+    /** 凭据键缺失消息后缀（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。 */
+    private static final String MISSING_KEY_SUFFIX = "（secrets 键规范见 Ali1688Credential javadoc）";
+
     public Ali1688Credential {
-        appKey = require(appKey, KEY_APP_KEY);
-        appSecret = require(appSecret, KEY_APP_SECRET);
-        accessToken = require(accessToken, KEY_ACCESS_TOKEN);
+        appKey = Ali1688ErrorMapping.requireNonBlank(appKey, "missing-credential",
+                "1688 凭据缺少必需键 " + KEY_APP_KEY + MISSING_KEY_SUFFIX);
+        appSecret = Ali1688ErrorMapping.requireNonBlank(appSecret, "missing-credential",
+                "1688 凭据缺少必需键 " + KEY_APP_SECRET + MISSING_KEY_SUFFIX);
+        accessToken = Ali1688ErrorMapping.requireNonBlank(accessToken, "missing-credential",
+                "1688 凭据缺少必需键 " + KEY_ACCESS_TOKEN + MISSING_KEY_SUFFIX);
     }
 
     /** 从 Channel 域交来的解密视图取凭据；缺任一必填键 = 配置问题（NON_RETRYABLE，重试无意义）。 */
@@ -66,14 +72,6 @@ public record Ali1688Credential(String appKey, String appSecret, String accessTo
             secrets.put(KEY_REFRESH_TOKEN, token);
         }
         return new CredentialView(TYPE, secrets, expiresAt);
-    }
-
-    private static String require(String value, String key) {
-        if (value == null || value.isBlank()) {
-            throw AdapterException.nonRetryable("missing-credential",
-                    "1688 凭据缺少必需键 " + key + "（secrets 键规范见 Ali1688Credential javadoc）");
-        }
-        return value;
     }
 
     @Override
