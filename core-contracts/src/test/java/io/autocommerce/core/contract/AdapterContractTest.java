@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.autocommerce.core.catalog.model.Money;
 import io.autocommerce.core.contract.dto.DecryptedAddress;
 import io.autocommerce.core.contract.dto.PurchaseDraft;
+import io.autocommerce.core.contract.dto.PurchaseResult;
 import io.autocommerce.core.order.model.SupplierRef;
 import io.autocommerce.core.testutil.ContractObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       对象）；回退成密文 {@link Credential} 就要求 Adapter 持有 AES 密钥，§5「Adapter 接口收到的是
  *       解密后的内存对象」即失守。</li>
  * </ol>
+ *
+ * <p>#46 追加：{@link PurchaseResult#platformRaw()} 逃生口的 round-trip 门——形态锁定为
+ * <b>单节点</b> {@code JsonNode}（specs/0005 §10.1，与 {@code OfferData.raw} 同形），可空且缺省时
+ * 由 NON_NULL 契约序列化省略（不进 {@code required}）。
  */
 class AdapterContractTest {
 
@@ -64,5 +69,33 @@ class AdapterContractTest {
         assertThat(AuthCapability.class.getMethods())
                 .filteredOn(m -> "refresh".equals(m.getName()))
                 .hasSize(1);
+    }
+
+    @Test
+    void purchaseResult_roundTripsSingleNodePlatformRaw() throws Exception {
+        JsonNode platformRaw = mapper.readTree(
+                "{\"orderId\":\"988129883123\",\"totalAmount\":\"91.80\",\"status\":\"waitbuyerpay\"}");
+        PurchaseResult result = new PurchaseResult("988129883123", platformRaw);
+
+        JsonNode json = mapper.valueToTree(result);
+
+        // 形态 = 单节点 JsonNode（JSON 对象），不是按端点分组的 Map / 数组
+        assertThat(json.path("platform_raw").isObject()).isTrue();
+        assertThat(json.path("platform_purchase_no").asText()).isEqualTo("988129883123");
+        // 未映射字段直通不丢（逃生口语义）
+        assertThat(json.path("platform_raw").path("totalAmount").asText()).isEqualTo("91.80");
+
+        // 双向：序列化形态可原样反序列化回模型（JsonNode 结构等价，无字段丢失）
+        assertThat(mapper.treeToValue(json, PurchaseResult.class)).isEqualTo(result);
+    }
+
+    @Test
+    void purchaseResult_nullPlatformRawIsOmittedInContractShape() throws Exception {
+        // 逃生口可空：null → NON_NULL 契约序列化省略 platform_raw（不进 required，contract breaking = 0）
+        JsonNode json = mapper.valueToTree(new PurchaseResult("988129883123", null));
+
+        assertThat(json.has("platform_raw")).isFalse();
+        assertThat(mapper.treeToValue(json, PurchaseResult.class))
+                .isEqualTo(new PurchaseResult("988129883123", null));
     }
 }

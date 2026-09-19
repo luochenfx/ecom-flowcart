@@ -31,10 +31,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       校核标准侧的序列化形态。</li>
  * </ul>
  *
- * <p>采购面<b>尚无</b> {@code PurchaseResult} 的独立 JSON schema（{@code schemas/} 只有
- * message / order / product-catalog），故该侧以「契约 ObjectMapper 序列化 + 结构断言」校核；
- * 而物流侧的 {@code Tracking} 已是 order schema 的 {@code $defs/Tracking}，<b>直接过 core 契约
- * 校验器</b>（{@code ContractAssertions.assertValid}）。后续补采购 schema 时接入同一门。
+ * <p>采购面<b>无</b> {@code PurchaseResult} 的独立 JSON schema（{@code schemas/} 只有
+ * message / order / product-catalog；#54 D2 决议：Adapter 自有 DTO 不给自己造 schema），故该侧以
+ * 「契约 ObjectMapper 序列化 + 结构断言」校核。{@code platformRaw} 逃生口（#46）即以此锁住
+ * 「<b>单节点</b> / 未映射字段直通 / 可空省略」；采购面标准侧的 schema 门为
+ * {@code order.schema.json#/$defs/PurchaseOrder}（含 {@code platform_raw}）。而物流侧的
+ * {@code Tracking} 已是 order schema 的 {@code $defs/Tracking}，<b>直接过 core 契约校验器</b>
+ * （{@code ContractAssertions.assertValid}）。
  */
 class Ali1688TradeJsonMapperTest {
 
@@ -109,7 +112,34 @@ class Ali1688TradeJsonMapperTest {
 
         assertThat(result.platformPurchaseNo()).isEqualTo(Ali1688TradeSamples.PURCHASE_NO);
         // core 契约侧（SNAKE_CASE + 省略 null）：标准模型即对接契约
-        assertThat(CONTRACT_MAPPER.writeValueAsString(result))
+        JsonNode canonical = CONTRACT_MAPPER.valueToTree(result);
+        assertThat(canonical.path("platform_purchase_no").asText())
+                .isEqualTo(Ali1688TradeSamples.PURCHASE_NO);
+
+        // platformRaw 逃生口（#46）：fastCreateOrder result 子树原文直通，未映射字段不丢
+        JsonNode raw = result.platformRaw();
+        assertThat(raw).isNotNull();
+        assertThat(raw.isObject()).as("platformRaw 应为单节点 JSON 对象（非数组）").isTrue();
+        assertThat(raw.path("totalAmount").asText()).isEqualTo("91.80");
+        assertThat(raw.path("freight").asText()).isEqualTo("0.00");
+        assertThat(raw.path("flowaprroveUrl").asText())
+                .isEqualTo("https://trade.1688.com/order/flow_approve.htm?orderId="
+                        + Ali1688TradeSamples.PURCHASE_NO);
+        assertThat(raw.path("gmtCreate").asText()).isEqualTo("2026-09-18 10:00:00");
+        assertThat(raw.path("gmtModified").asText()).isEqualTo("2026-09-18 10:00:05");
+        assertThat(raw.path("status").asText()).isEqualTo("waitbuyerpay");
+
+        // 标准侧序列化形态：platform_raw 同一单节点直通
+        assertThat(canonical.path("platform_raw").isObject()).isTrue();
+        assertThat(canonical.path("platform_raw").path("totalAmount").asText()).isEqualTo("91.80");
+    }
+
+    @Test
+    void platformRawOmittedWhenAbsentInContractShape() throws Exception {
+        // 逃生口可空：raw 为空 → 契约 NON_NULL 序列化省略 platform_raw（schema 视为可省略）
+        PurchaseResult bare = new PurchaseResult(Ali1688TradeSamples.PURCHASE_NO, null);
+
+        assertThat(CONTRACT_MAPPER.writeValueAsString(bare))
                 .isEqualTo("{\"platform_purchase_no\":\"" + Ali1688TradeSamples.PURCHASE_NO + "\"}");
     }
 

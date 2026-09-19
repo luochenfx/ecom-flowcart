@@ -3,6 +3,12 @@
   "code": "0",
   "message": null,
   "result": {
-    "orderId": "988129883123"
+    "orderId": "988129883123",
+    "totalAmount": "91.80",
+    "freight": "0.00",
+    "flowaprroveUrl": "https://trade.1688.com/order/flow_approve.htm?orderId=988129883123",
+    "gmtCreate": "2026-09-18 10:00:00",
+    "gmtModified": "2026-09-18 10:00:05",
+    "status": "waitbuyerpay"
   }
 }

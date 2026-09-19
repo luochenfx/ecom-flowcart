@@ -61,7 +61,7 @@ interface AuthCapability          // 可选：OAuth refresh 等平台专属凭�
 | **逃生口** | 平台字段未被标准模型覆盖 | **`platform_raw` JSONB 直通** + Listing 扩展（UCP metadata / Truto JSONata 同哲学） | 平台演进不被标准模型冻结，不另造映射 DSL |
 
 - 贡献者写 Adapter 只需懂「平台 API + 标准模型结构」，**不需要学一套映射 DSL**。
-- **逃生口的落点（#54 D1 决议，全文见 §10.1）**：`platform_raw` 是**聚合根上的单个 JSONB 节点**（聚合根 **4 处**：`Spu.platform_raw` / `Order.platform_raw` / `OrderSnapshot.platform_raw` / `PurchaseOrder.platform_raw`）——语义 = 「该记录对应的**那一次**平台响应的原文」，**不按端点分组**、不引入 `Map<端点, JsonNode>`。Adapter 侧的承载 DTO（`OfferData.raw`；采购面为 `PurchaseResult.platformRaw`，**待 #46 落地**，见 §10.2.2）只负责把原文交到 domain 边界，**落库由 domain 完成**。
+- **逃生口的落点（#54 D1 决议，全文见 §10.1）**：`platform_raw` 是**聚合根上的单个 JSONB 节点**（聚合根 **4 处**：`Spu.platform_raw` / `Order.platform_raw` / `OrderSnapshot.platform_raw` / `PurchaseOrder.platform_raw`）——语义 = 「该记录对应的**那一次**平台响应的原文」，**不按端点分组**、不引入 `Map<端点, JsonNode>`。Adapter 侧的承载 DTO（`OfferData.raw`；采购面为 `PurchaseResult.platformRaw`，**#46 已落地**，见 §10.2.2）只负责把原文交到 domain 边界，**落库由 domain 完成**。
   - 推论（采购面）：`PurchaseOrder.platform_raw` 的**唯一来源 = `createPurchase` 响应**；`cancelPurchase` / `payPurchase` / `fetchLogistics` 三端点 v1 不回传未映射字段（论据与触发条件见 §10.1）。
 
 ## 4. 插件机制
