@@ -2,6 +2,7 @@ package io.autocommerce.adapter.ali1688;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.autocommerce.core.contract.AdapterErrorKind;
 import io.autocommerce.core.contract.AdapterException;
 import io.autocommerce.core.contract.dto.DecryptedAddress;
@@ -9,11 +10,14 @@ import io.autocommerce.core.contract.dto.LogisticsTrace;
 import io.autocommerce.core.contract.dto.PurchaseDraft;
 import io.autocommerce.core.contract.dto.PurchaseResult;
 import io.autocommerce.core.order.model.Tracking;
+import com.networknt.schema.JsonNodePath;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.PathType;
 import com.networknt.schema.SpecVersion;
 import io.autocommerce.core.testutil.ContractAssertions;
 import io.autocommerce.core.testutil.ContractObjectMapper;
+import io.autocommerce.core.testutil.ContractSchemas;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -32,10 +36,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <p>采购面<b>无</b> {@code PurchaseResult} 的独立 JSON schema（{@code schemas/} 只有
- * message / order / product-catalog；#54 D2 决议：Adapter 自有 DTO 不给自己造 schema），故该侧以
- * 「契约 ObjectMapper 序列化 + 结构断言」校核。{@code platformRaw} 逃生口（#46）即以此锁住
- * 「<b>单节点</b> / 未映射字段直通 / 可空省略」；采购面标准侧的 schema 门为
- * {@code order.schema.json#/$defs/PurchaseOrder}（含 {@code platform_raw}）。而物流侧的
+ * message / order / product-catalog；#54 D2 决议：Adapter 自有 DTO 不给自己造 schema），故 DTO 层以
+ * 「契约 ObjectMapper 序列化 + 结构断言」校核；标准侧则把 adapter 真实产出
+ * （{@code platform_purchase_no} / {@code platform_raw}，其余必填字段取自 core golden fixture）
+ * 落领域 {@code PurchaseOrder} 形态，过 {@code order.schema.json#/$defs/PurchaseOrder} 门
+ * （含 {@code platform_raw}）。{@code platformRaw} 逃生口（#46）即以此锁住
+ * 「<b>单节点</b> / 未映射字段直通 / 可空省略」。而物流侧的
  * {@code Tracking} 已是 order schema 的 {@code $defs/Tracking}，<b>直接过 core 契约校验器</b>
  * （{@code ContractAssertions.assertValid}）。
  */
@@ -144,6 +150,47 @@ class Ali1688TradeJsonMapperTest {
     }
 
     @Test
+    void purchaseResultFieldsPassPurchaseOrderDefSchemaGate() throws Exception {
+        // adapter 真实产出：fastCreateOrder 响应 → PurchaseResult
+        JsonNode response = MAPPER.readTree(
+                Ali1688TradeSamples.fixture("1688-trade-fastCreateOrder-response.json"));
+        PurchaseResult result = json.toPurchaseResult(response);
+        assertThat(result.platformRaw())
+                .as("前置：fastCreateOrder 的 platformRaw 应为单节点 JSON 对象（非数组/标量）")
+                .isNotNull();
+        assertThat(result.platformRaw().isObject()).isTrue();
+
+        JsonSchema purchaseOrder = purchaseOrderDef();
+
+        // ① platformRaw 存在（对象）：断言的 subject 仅是 adapter 的 platform_purchase_no +
+        //    platform_raw；其余必填字段取自 core golden fixture purchase_orders[0]（真实 golden 文档，
+        //    非手捏占位），故占位字段不会成为断言强度来源。
+        ObjectNode withRaw = purchaseOrderDoc();
+        withRaw.put("platform_purchase_no", result.platformPurchaseNo());
+        withRaw.set("platform_raw", result.platformRaw());
+        ContractAssertions.assertValid(purchaseOrder, withRaw,
+                "1688 采购响应产出（platform_raw 为对象）→ 领域 PurchaseOrder 应过 "
+                        + "order.schema.json#/$defs/PurchaseOrder");
+
+        // ② platformRaw 为 null：RawJson = ["object","null"]，且 platform_raw 不在 required
+        // ③ platformRaw 缺失：契约 NON_NULL 序列化省略该字段 —— 逃生口为空同样必须过门
+        PurchaseResult bare = new PurchaseResult(Ali1688TradeSamples.PURCHASE_NO, null);
+
+        ObjectNode explicitNull = purchaseOrderDoc();
+        explicitNull.put("platform_purchase_no", bare.platformPurchaseNo());
+        explicitNull.putNull("platform_raw");
+        ContractAssertions.assertValid(purchaseOrder, explicitNull,
+                "1688 采购响应产出（platform_raw 为 null）→ 领域 PurchaseOrder 应过 "
+                        + "order.schema.json#/$defs/PurchaseOrder");
+
+        ObjectNode omitted = purchaseOrderDoc();
+        omitted.put("platform_purchase_no", bare.platformPurchaseNo());
+        ContractAssertions.assertValid(purchaseOrder, omitted,
+                "1688 采购响应产出（platform_raw 省略）→ 领域 PurchaseOrder 应过 "
+                        + "order.schema.json#/$defs/PurchaseOrder");
+    }
+
+    @Test
     void missingOrderIdIsNonRetryable() throws Exception {
         JsonNode response = MAPPER.readTree("{\"success\":true,\"code\":\"0\",\"result\":{}}");
 
@@ -183,5 +230,29 @@ class Ali1688TradeJsonMapperTest {
                 Ali1688TradeJsonMapperTest.class.getResourceAsStream("/schemas/order.schema.json"));
         return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
                 .getSchema(orderSchema.at("/$defs/Tracking"));
+    }
+
+    /**
+     * 取 order.schema.json 的 {@code $defs/PurchaseOrder} 子 schema。
+     *
+     * <p>与物流侧 {@code $defs/Tracking} 不同：{@code PurchaseOrder} 内含 {@code #/$defs/*} 内部引用
+     * （SupplierRef / PurchaseStatus / Money / Tracking / Timestamps / PurchaseLine / RawJson，及跨文件
+     * Provenance），直接 {@code at("/$defs/PurchaseOrder")} 抽子树会让这些引用悬空（networknt 报
+     * {@code Reference /$defs/SupplierRef cannot be resolved}）。故改经 {@link ContractSchemas#order()}
+     * （跨文件 Provenance 已内联的整文档 schema）以 {@code getSubSchema} 取子 schema ——
+     * 引用仍对整文档根解析，约束不变。
+     */
+    private static JsonSchema purchaseOrderDef() {
+        return ContractSchemas.order().getSubSchema(
+                new JsonNodePath(PathType.JSON_POINTER).append("$defs").append("PurchaseOrder"));
+    }
+
+    /**
+     * 领域 PurchaseOrder 文档：非 adapter 来源的必填字段取自 core golden fixture
+     * {@code /fixtures/order.json} 的 {@code purchase_orders[0]}（随 core-contracts test-jar 分发）。
+     */
+    private static ObjectNode purchaseOrderDoc() throws Exception {
+        return (ObjectNode) MAPPER.readTree(Ali1688TradeSamples.fixture("order.json"))
+                .path("purchase_orders").get(0);
     }
 }
