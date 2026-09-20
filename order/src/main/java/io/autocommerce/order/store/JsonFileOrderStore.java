@@ -78,10 +78,12 @@ public final class JsonFileOrderStore implements OrderStore {
     public OrderModel updateOrder(OrderModel orderAggregate) {
         Order incoming = singleOrder(orderAggregate);
         OrderModel doc = read();
-        if (extract(doc, incoming.orderId()).isEmpty()) {
+        Optional<OrderModel> existing = extract(doc, incoming.orderId());
+        if (existing.isEmpty()) {
             throw new IllegalStateException("updateOrder 目标订单不存在，需先 saveOrderIfAbsent: "
                     + incoming.orderId());
         }
+        assertSnapshotsUnchanged(existing.get(), orderAggregate);
         write(replace(doc, orderAggregate));
         return orderAggregate;
     }
@@ -192,6 +194,18 @@ public final class JsonFileOrderStore implements OrderStore {
                     "OrderStore 存储单元 = 单个订单聚合文档，orders() 必须恰 1 条");
         }
         return aggregate.orders().get(0);
+    }
+
+    /**
+     * specs/0003 §3 铁律的机械守卫：{@link OrderSnapshot} 建单后不可 UPDATE。覆盖式更新只推进聚合的
+     * 操作态（地址 / 采购单 / 物流 / RMA / 履约轴），既有快照必须原样前移；一旦入参快照集合与既有不一致
+     * （新增 / 覆盖 / 删除）即拒绝覆写——不靠调用方约定，落库层拦下。
+     */
+    private static void assertSnapshotsUnchanged(OrderModel existing, OrderModel incoming) {
+        if (!nullSafe(existing.orderSnapshots()).equals(nullSafe(incoming.orderSnapshots()))) {
+            throw new IllegalStateException("OrderSnapshot 不可变（specs/0003 §3）：updateOrder 不得变更既有"
+                    + "快照（新增 / 覆盖 / 删除均禁止）, orderId=" + singleOrder(incoming).orderId());
+        }
     }
 
     private static <T> List<T> filterByOrderId(List<T> source, java.util.function.Function<T, String> id, String orderId) {

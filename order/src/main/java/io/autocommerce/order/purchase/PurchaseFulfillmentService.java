@@ -145,7 +145,7 @@ public final class PurchaseFulfillmentService {
                 purchaseOrder.lines(), purchaseOrder.amount(), tracking, now(),
                 purchaseOrder.provenance());
         OrderAggregate updated = aggregate.withPurchaseOrders(List.of(shipped));
-        FulfillmentStatus derived = FulfillmentDeriver.salesFromPurchases(updated.purchaseOrders());
+        FulfillmentStatus derived = FulfillmentDeriver.deriveSales(updated.purchaseOrders(), updated.rmas());
         store.updateOrder(updated.withFulfillmentStatus(derived).toDocument());
         return shipped;
     }

@@ -28,6 +28,10 @@ public interface EventPublisher {
      *
      * <p>A-prime 降级语义同 {@link #publishFailed}：process 在落库后、发事件前 crash → 事件丢失；
      * 消费端以业务库回读为准，envelope.id 作幂等锚（重复广播由消费端去重）。
+     *
+     * <p><b>envelope.id 由事实键确定性派生</b>（见 {@link DomainEvents}）：同一已落库事实的重复广播
+     * （activity 失败重跑 / broker 重投）产出<b>同一</b> id，故该幂等锚对"重跑产生第二条 envelope"
+     * 同样有效，而非仅对 broker 重投同一 envelope 有效。
      */
     void publishDomainEvent(Envelope envelope);
 }

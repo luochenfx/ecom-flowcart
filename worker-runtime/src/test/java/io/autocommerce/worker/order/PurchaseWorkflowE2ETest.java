@@ -79,7 +79,7 @@ class PurchaseWorkflowE2ETest {
         assertThat(sync.pull().createdOrderIds()).containsExactly(OrderFixtures.ORDER_ID);
 
         PurchaseActivities purchaseActivities = new PurchaseActivitiesImpl(fulfillment(), events,
-                "PurchaseWorkflow", CLOCK);
+                "PurchaseWorkflow");
         env = TestWorkflowEnvironment.newInstance();
         env.newWorker(OrderRuntime.TASK_QUEUE).registerWorkflowImplementationTypes(PurchaseWorkflowImpl.class);
         env.newWorker(OrderRuntime.TASK_QUEUE).registerActivitiesImplementations(purchaseActivities);

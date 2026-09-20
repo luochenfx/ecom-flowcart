@@ -30,33 +30,33 @@ class FulfillmentDeriverTest {
 
     @Test
     void salesAxisDerivedFromPurchaseSet() {
-        assertThat(FulfillmentDeriver.salesFromPurchases(List.of()))
+        assertThat(FulfillmentDeriver.deriveSales(List.of(), List.of()))
                 .isEqualTo(FulfillmentStatus.AWAITING_PURCHASE);
-        assertThat(FulfillmentDeriver.salesFromPurchases(List.of(po(PurchaseStatus.PAID))))
+        assertThat(FulfillmentDeriver.deriveSales(List.of(po(PurchaseStatus.PAID)), List.of()))
                 .isEqualTo(FulfillmentStatus.PURCHASING);
-        assertThat(FulfillmentDeriver.salesFromPurchases(
-                List.of(po(PurchaseStatus.SHIPPED), po(PurchaseStatus.PAID))))
+        assertThat(FulfillmentDeriver.deriveSales(
+                List.of(po(PurchaseStatus.SHIPPED), po(PurchaseStatus.PAID)), List.of()))
                 .isEqualTo(FulfillmentStatus.PARTIALLY_SHIPPED);
-        assertThat(FulfillmentDeriver.salesFromPurchases(
-                List.of(po(PurchaseStatus.SHIPPED), po(PurchaseStatus.COMPLETED))))
+        assertThat(FulfillmentDeriver.deriveSales(
+                List.of(po(PurchaseStatus.SHIPPED), po(PurchaseStatus.COMPLETED)), List.of()))
                 .isEqualTo(FulfillmentStatus.SHIPPED);
     }
 
     @Test
     void rmaOverlayDerivesRefundingOrDisputedOnlyWhileOpen() {
-        FulfillmentStatus shipped = FulfillmentStatus.SHIPPED;
+        List<PurchaseOrder> allShipped = List.of(po(PurchaseStatus.SHIPPED), po(PurchaseStatus.SHIPPED));
 
-        // 未收敛 RMA → 销售侧叠加派生
-        assertThat(FulfillmentDeriver.withRmas(shipped,
+        // 未收敛 RMA → 销售侧叠加派生（采购已全部发货 base=SHIPPED，被 RMA overlay 覆盖）
+        assertThat(FulfillmentDeriver.deriveSales(allShipped,
                 List.of(rma(RmaType.REFUND, RmaStatus.WAITING_SELLER))))
                 .isEqualTo(FulfillmentStatus.REFUNDING);
-        assertThat(FulfillmentDeriver.withRmas(shipped,
+        assertThat(FulfillmentDeriver.deriveSales(allShipped,
                 List.of(rma(RmaType.DISPUTE, RmaStatus.OPEN))))
                 .isEqualTo(FulfillmentStatus.DISPUTED);
-        // 已收敛（终态）→ 回到 base
-        assertThat(FulfillmentDeriver.withRmas(shipped,
+        // 已收敛（终态）→ 回到 base（采购聚合态）
+        assertThat(FulfillmentDeriver.deriveSales(allShipped,
                 List.of(rma(RmaType.REFUND, RmaStatus.REFUNDED))))
-                .isEqualTo(shipped);
+                .isEqualTo(FulfillmentStatus.SHIPPED);
     }
 
     @Test

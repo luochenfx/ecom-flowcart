@@ -7,6 +7,7 @@ import io.autocommerce.core.order.model.PurchaseStatus;
 import io.autocommerce.core.order.model.ShippingAddress;
 import io.autocommerce.core.order.model.ShippingAddressState;
 import io.autocommerce.order.address.AddressCipher;
+import io.autocommerce.order.model.OrderAggregate;
 import io.autocommerce.order.snapshot.OrderAggregateAssembler;
 import io.autocommerce.order.store.JsonFileOrderStore;
 import io.autocommerce.order.store.OrderStore;
@@ -128,5 +129,22 @@ class PurchaseFulfillmentServiceTest {
         OrderModel saved = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
         assertThat(saved.orders().get(0).fulfillmentStatus()).as("采购全部发货 → 销售侧 SHIPPED")
                 .isEqualTo(FulfillmentStatus.SHIPPED);
+    }
+
+    @Test
+    void shipmentReturnDoesNotOverrideOpenRmaSalesAxis() {
+        // 该订单已挂 open RMA（WAITING_SELLER）——销售轴应叠加派生为 REFUNDING
+        store.updateOrder(OrderAggregate.of(store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow())
+                .withRmas(List.of(OrderFixtures.rma())).toDocument());
+        service.placePurchases(OrderFixtures.ORDER_ID);
+        store.updateOrder(OrderAggregate.of(store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow())
+                .withFulfillmentStatus(FulfillmentStatus.REFUNDING).toDocument());
+
+        service.returnShipments(OrderFixtures.ORDER_ID);
+
+        assertThat(store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
+                .orders().get(0).fulfillmentStatus())
+                .as("有 open RMA 时发货回传不得把销售轴从 REFUNDING 覆盖回 SHIPPED（单一派生入口）")
+                .isEqualTo(FulfillmentStatus.REFUNDING);
     }
 }

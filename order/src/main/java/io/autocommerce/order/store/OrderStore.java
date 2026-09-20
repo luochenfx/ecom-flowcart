@@ -42,9 +42,12 @@ public interface OrderStore {
 
     /**
      * 覆盖式更新一个已存在的订单聚合（履约推进：解密地址 / 采购单 / 物流 / RMA）。
-     * 订单聚合的不可变承诺只在快照层——快照由 {@link #saveOrderIfAbsent} 一次性写入后不再改动。
      *
-     * @throws IllegalStateException 目标订单不存在（更新前须先落库）
+     * <p><b>快照不可变契约（specs/0003 §3 铁律）</b>：订单聚合的不可变承诺只在快照层——{@code
+     * OrderSnapshot} 由 {@link #saveOrderIfAbsent} 一次性写入后<b>不可 UPDATE</b>。实现必须机械守卫：
+     * 入参携带的快照集合与既有不一致（新增 / 覆盖 / 删除）即拒绝，不得静默覆写。
+     *
+     * @throws IllegalStateException 目标订单不存在（更新前须先落库）；或入参快照与既有不一致
      */
     OrderModel updateOrder(OrderModel orderAggregate);
 

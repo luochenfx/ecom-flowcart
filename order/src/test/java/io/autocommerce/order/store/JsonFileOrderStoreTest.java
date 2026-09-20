@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.autocommerce.core.order.model.ChannelSyncState;
 import io.autocommerce.core.order.model.FulfillmentStatus;
 import io.autocommerce.core.order.model.OrderModel;
+import io.autocommerce.core.order.model.OrderSnapshot;
 import io.autocommerce.order.model.OrderAggregate;
 import io.autocommerce.order.snapshot.OrderAggregateAssembler;
 import io.autocommerce.order.testsupport.OrderFixtures;
@@ -68,5 +69,24 @@ class JsonFileOrderStoreTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> store.updateOrder(aggregate()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("目标订单不存在");
+    }
+
+    @Test
+    void updateRejectsChangedSnapshot() {
+        OrderStore store = new JsonFileOrderStore(tempDir);
+        OrderModel base = aggregate();
+        store.saveOrderIfAbsent(base);
+
+        OrderSnapshot original = OrderFixtures.snapshot();
+        OrderSnapshot tampered = new OrderSnapshot(original.snapshotId(), original.orderId(),
+                "2099-01-01T00:00:00Z", original.amounts(), original.lineSnapshots(),
+                original.shippingAddressMask(), original.platformRaw(), original.provenance());
+        OrderModel incoming = new OrderModel(base.schemaVersion(), base.orders(), base.orderLines(),
+                List.of(tampered), base.purchaseOrders(), base.rmas(), base.channelSyncStates());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> store.updateOrder(incoming))
+                .as("specs/0003 §3 铁律：既有快照与入参不一致即拒绝覆写")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("OrderSnapshot 不可变");
     }
 }

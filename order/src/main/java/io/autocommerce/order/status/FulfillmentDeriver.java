@@ -62,8 +62,20 @@ public final class FulfillmentDeriver {
         return status != null && RMA_OPEN.contains(status);
     }
 
-    /** 销售履约轴 ← 采购单集合派生（无采购 = AWAITING_PURCHASE；部分/全部发货）。 */
-    public static FulfillmentStatus salesFromPurchases(List<PurchaseOrder> purchases) {
+    /**
+     * 销售履约轴派生的<b>唯一入口</b>（specs/0003 §4 / Spec #16 §0.3 派生纪律）：先由采购单集合聚合
+     * 出 base，再叠加未收敛 RMA overlay。所有写销售轴的调用方（发货回传 / RMA 同步）一律经此处，
+     * 杜绝同一 canonical 轴被两套不同规则写入。
+     *
+     * @param purchases 该订单当前采购单集合（聚合出"未采购 / 部分发货 / 全部发货"）
+     * @param rmas      该订单当前 RMA 集合（存在未收敛 RMA 时叠加 REFUNDING / DISPUTED）
+     */
+    public static FulfillmentStatus deriveSales(List<PurchaseOrder> purchases, List<OrderRma> rmas) {
+        return withRmas(salesFromPurchases(purchases), rmas);
+    }
+
+    /** 销售履约轴 ← 采购单集合派生（无采购 = AWAITING_PURCHASE；部分/全部发货）。{@link #deriveSales} 内部基元。 */
+    private static FulfillmentStatus salesFromPurchases(List<PurchaseOrder> purchases) {
         if (purchases == null || purchases.isEmpty()) {
             return FulfillmentStatus.AWAITING_PURCHASE;
         }
@@ -78,9 +90,9 @@ public final class FulfillmentDeriver {
 
     /**
      * 在既有履约轴上叠加 RMA 派生：存在未收敛 RMA 时，销售侧变为 REFUNDING（仅退款入口）或
-     * DISPUTED（含纠纷入口）；RMA 全部收敛则回到 base（采购聚合态）。
+     * DISPUTED（含纠纷入口）；RMA 全部收敛则回到 base（采购聚合态）。{@link #deriveSales} 内部基元。
      */
-    public static FulfillmentStatus withRmas(FulfillmentStatus base, List<OrderRma> rmas) {
+    private static FulfillmentStatus withRmas(FulfillmentStatus base, List<OrderRma> rmas) {
         List<OrderRma> open = (rmas == null ? List.<OrderRma>of() : rmas).stream()
                 .filter(r -> isRmaOpen(r.rmaStatus()))
                 .toList();

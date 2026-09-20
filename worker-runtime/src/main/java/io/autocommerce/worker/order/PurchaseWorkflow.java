@@ -9,7 +9,7 @@ import io.temporal.workflow.WorkflowMethod;
  *
  * <p>与 {@link OrderWorkflow} 同级、同 worker、同 task queue，但生命周期独立：一张销售订单拆 N 张采购单
  * = N 个本 workflow 并行履约。销售侧 {@code SHIPPED/COMPLETED} 由这些采购 workflow 的结果集合
- * <b>派生</b>（{@code FulfillmentDeriver.salesFromPurchases}），不双写。
+ * <b>派生</b>（{@code FulfillmentDeriver.deriveSales}），不双写。
  *
  * <p>确定性 workflowId = {@link PurchaseRuntime#workflowIdFor(String, String)}，与
  * {@code PurchaseOrder.purchase_order_id} 同源（specs/0003 §2/§6）：重复 start 复用既有 execution，

@@ -83,7 +83,8 @@ public final class OrderActivitiesImpl implements OrderActivities {
             RmaOutcome outcome = FulfillmentDeriver.outcomeFor(rma.rmaStatus());
             if (outcome != null) {
                 events.publishDomainEvent(DomainEvents.rmaClosed(workflowType, rma.orderId(),
-                        rma.rmaId(), outcome));
+                        rma.rmaId(), outcome, rma.timestamps() == null ? null
+                                : rma.timestamps().updatedAt()));
             }
         }
         return rmas;

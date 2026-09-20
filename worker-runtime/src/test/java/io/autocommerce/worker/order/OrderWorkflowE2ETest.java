@@ -89,7 +89,7 @@ class OrderWorkflowE2ETest {
         OrderActivities activities = new OrderActivitiesImpl(store, fulfillment(), rmaSync(), events,
                 "OrderWorkflow");
         PurchaseActivities purchaseActivities = new PurchaseActivitiesImpl(fulfillment(), events,
-                "PurchaseWorkflow", CLOCK);
+                "PurchaseWorkflow");
         env = TestWorkflowEnvironment.newInstance();
         OrderWorkerFactory.register(env.newWorker(OrderRuntime.TASK_QUEUE), activities, purchaseActivities);
         env.start();
