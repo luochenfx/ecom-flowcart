@@ -42,6 +42,15 @@ import java.util.Optional;
  * 是否已生效本就未知，故这一次重发仍可能造成重复铺货。彻底闭合需 activity 级幂等键或平台侧查重端点，
  * 二者当前均不存在（ADR-0003 已定：幂等由 execution 级唯一性承担，不建登记表）。v1 以"确定性
  * workflowId + 可重入检查"为界，此窗口如实登记。
+ *
+ * <p><b>add 成功、落库失败窗口（单独登记）</b>：{@code add} 已成功返回（平台侧商品已创建）但随后的
+ * PUBLISHED 落库抛异常（非 {@code AdapterException}）时，<b>刻意不</b>按"bug → UNEXPECTED → FAILED"
+ * 归类——FAILED 会经 {@code AllowDuplicateFailedOnly} 授权同 id 新 run，新 run 的 {@code inspect}
+ * 查不到 {@code platform_item_id} → reconcile 无果 → 再次 add，即<b>真的二次铺货</b>，与 ADR-0003
+ * 「AMBIGUOUS 绝不自动重发」冲突。故该情形改归 {@link PublishDisposition#AMBIGUOUS} 挂起（非终态、
+ * 不授权重铺），见 {@link #recordAddOutcome} / {@link #suspendUnrecordedEffect}。仅当连 AMBIGUOUS
+ * 也落不下（状态库整体不可用）时才退回可重试处置且不写任何终态——与上一段残余窗口同族，靠
+ * "可重入检查 + reconcile-first"安全网。
  */
 public final class PublishService {
 
@@ -98,12 +107,14 @@ public final class PublishService {
             return PublishDecision.published(recordPublished(listingId, ref.platformItemId(), ref.url()));
         }
 
+        PublishResult result;
         try {
-            PublishResult result = capability.add(listing);
-            return PublishDecision.published(recordPublished(listingId, result.platformItemId(), result.url()));
+            result = capability.add(listing);
         } catch (RuntimeException e) {
-            return classify(listingId, e);
+            return classify(listingId, e); // add 未返回：常规失败归类（RETRYABLE / REJECTED / AMBIGUOUS / UNEXPECTED）
         }
+        // add 已成功返回 → 外部副作用已生效；此后的落库失败绝不得归 FAILED（会授权重铺，见类 javadoc）
+        return recordAddOutcome(listingId, result);
     }
 
     /**
@@ -133,11 +144,6 @@ public final class PublishService {
         return PublishDecision.failed(recordTerminal(listingId, PublishStatus.FAILED, reason));
     }
 
-    /** 读当前投影行（看板 / 断言用）。 */
-    public Optional<PublishState> state(String listingId) {
-        return store.get(listingId);
-    }
-
     // ---------------- 内部：失败归类 ----------------
 
     private PublishDecision classify(String listingId, RuntimeException throwable) {
@@ -165,6 +171,43 @@ public final class PublishService {
             return capability.reconcile(listingId);
         } catch (RuntimeException e) {
             return Optional.empty(); // 核实失败 = 无果 → 保守挂起
+        }
+    }
+
+    // ---------------- 内部：add 已生效后的落库（绝不误判 FAILED） ----------------
+
+    /**
+     * {@code add} 已成功返回后的落库与收口（AC-3 语义边界 / ADR-0003）。
+     *
+     * <p>落库成功 → {@link PublishDisposition#PUBLISHED}；落库失败（非 {@code AdapterException}）→
+     * <b>不</b>走 {@link #classify}（那会归 UNEXPECTED → FAILED，从而授权同 id 重铺、二次铺货），
+     * 而是归"外部已生效 / 本地未知"的歧义挂起，见 {@link #suspendUnrecordedEffect}。
+     */
+    private PublishDecision recordAddOutcome(String listingId, PublishResult result) {
+        try {
+            return PublishDecision.published(
+                    recordPublished(listingId, result.platformItemId(), result.url()));
+        } catch (RuntimeException recordFailure) {
+            return suspendUnrecordedEffect(listingId, recordFailure);
+        }
+    }
+
+    /**
+     * "add 已生效、PUBLISHED 落库失败" → {@link PublishDisposition#AMBIGUOUS} 挂起（绝不判 FAILED）。
+     *
+     * <p>先尽力把 AMBIGUOUS 事实落库（挂起态需被 {@code inspect} / 看板看到，且使 workflow 停在
+     * 非终态、不授权重铺）；若连 AMBIGUOUS 也落不下（状态库整体不可用），退回
+     * {@link PublishDisposition#RETRYABLE} 交 Activity RetryPolicy 退避重试——此时<b>不写任何终态</b>
+     * （尤其不写 FAILED）且不发领域事件（bus 只承载已落库事实）。store 恢复后重入仍先走可重入检查 +
+     * reconcile-first 安全网。
+     */
+    private PublishDecision suspendUnrecordedEffect(String listingId, RuntimeException recordFailure) {
+        String reason = "add 已生效但 PUBLISHED 落库失败（" + recordFailure.getClass().getName()
+                + "）：外部已创建平台商品、本地无记录 → 归歧义挂起，绝不自动重发（ADR-0003 / specs/0001 §5）";
+        try {
+            return PublishDecision.ambiguous(recordAmbiguous(listingId, reason));
+        } catch (RuntimeException storeUnavailable) {
+            return PublishDecision.retryable(listingId, reason + "；状态库暂不可用，转退避重试");
         }
     }
 

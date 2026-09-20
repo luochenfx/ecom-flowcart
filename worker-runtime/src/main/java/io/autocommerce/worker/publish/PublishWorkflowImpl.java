@@ -26,7 +26,13 @@ public final class PublishWorkflowImpl implements PublishWorkflow {
     private final PublishActivities activities =
             Workflow.newActivityStub(PublishActivities.class, PublishActivityOptions.defaults());
 
-    /** AMBIGUOUS 挂起期间由 signal handler 写入；{@link #run} 的 await 谓词读它（每次尝试前置空）。 */
+    /**
+     * AMBIGUOUS 挂起期间由 signal handler 写入；{@link #run} 的 await 谓词读它。
+     *
+     * <p><b>清空时机</b>：只在<b>消费掉</b>一次裁定之后置空（见 {@code run} 的 {@code decided} 之后），
+     * <b>不</b>在每次尝试前置空——否则在首个 {@code inspect} 期间赶到的 signal 会在进入循环时被丢弃。
+     * 如此"早到即保留"成立：{@code inspect} / {@code add} 尚在飞行期间到达的裁定都保留到挂起时生效。
+     */
     private Resolution resolution;
 
     @Override
@@ -36,7 +42,6 @@ public final class PublishWorkflowImpl implements PublishWorkflow {
             return toResult(inspected);
         }
         while (true) {
-            resolution = null;
             PublishDecision attempt = attemptPublish(input);
             if (attempt.published()) {
                 return toResult(attempt);
@@ -44,7 +49,7 @@ public final class PublishWorkflowImpl implements PublishWorkflow {
             // AMBIGUOUS：非终态，挂起等人工/对账 signal（specs/0001 §3；重复 start 仍 AlreadyStarted）
             Workflow.await(() -> resolution != null);
             Resolution decided = resolution;
-            resolution = null;
+            resolution = null; // 消费后置空：下一轮 await 只认新到的 signal
             switch (decided.kind()) {
                 case CONFIRMED_PUBLISHED -> {
                     return toResult(activities.confirmPublished(input, decided.platformItemId(),

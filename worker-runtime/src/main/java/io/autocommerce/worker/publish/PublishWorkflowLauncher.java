@@ -57,12 +57,7 @@ public final class PublishWorkflowLauncher {
         return workflow;
     }
 
-    /** 由 Listing 坐标反推运行中的 workflow stub（查状态 / 发 signal 用）。 */
-    public PublishWorkflow stub(PublishWorkflowInput input) {
-        Objects.requireNonNull(input, "input 必填");
-        return client.newWorkflowStub(PublishWorkflow.class, optionsFor(input));
-    }
-
+    /** 由 Listing 坐标派生 workflow 选项（确定性 id + 复用策略，见类 javadoc）。 */
     private WorkflowOptions optionsFor(PublishWorkflowInput input) {
         return WorkflowOptions.newBuilder()
                 .setWorkflowId(PublishRuntime.workflowIdFor(input.listing().spuId(), input.listing().channelId()))

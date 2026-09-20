@@ -10,7 +10,9 @@ import io.autocommerce.core.testutil.ContractSchemas;
 import io.autocommerce.publish.JsonFilePublishStateStore;
 import io.autocommerce.publish.PublishService;
 import io.autocommerce.publish.PublishState;
+import io.autocommerce.publish.PublishStateStore;
 import io.autocommerce.publish.PublishStatus;
+import io.autocommerce.publish.testsupport.FailingPutPublishStateStore;
 import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter;
 import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter.AddBehavior;
 import io.autocommerce.publish.testsupport.PublishFixtures;
@@ -43,6 +45,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>刻意不 mock 业务逻辑：PublishService / JsonFilePublishStateStore / PublishActivitiesImpl /
  * PublishWorkflowImpl 都是真实实现，只有外部平台是假的。三条路径（成功 / 歧义挂起 + 人工恢复 /
  * 业务拒绝收尾）全覆盖，另加：幂等复用、reconcile 回填、可重试耗尽 → FAILED、非 AdapterException → FAILED。
+ *
+ * <p><b>AC-6「重放安全」的覆盖口径（如实标注，避免被读成"已用 replay 测试验证"）</b>：本文件的<b>实质</b>
+ * 断言覆盖「确定性」（workflowId 断言）、「幂等复用」、「AMBIGUOUS 挂起 + signal 恢复」；而
+ * <b>「重放安全」是结构性保证</b>——workflow 在 {@link TestWorkflowEnvironment} 上真实执行、
+ * {@code PublishWorkflowImpl} 零 I/O（由 {@code PublishRuntimeArchitectureTest} 守门），本文件
+ * <b>未</b>引入显式 event-history replay 断言（全仓 {@code Replayer} 用量为 0，与 content / order /
+ * purchase 三条既有 workflow E2E 的基线一致；将来补测可用一次 {@code WorkflowReplayer} 断言历史重放不分叉）。
  */
 class PublishWorkflowE2ETest {
 
@@ -219,6 +228,32 @@ class PublishWorkflowE2ETest {
         assertThat(state().reason()).contains("IllegalStateException");
     }
 
+    // ---------------- add 已生效、落库失败 → 挂起而非授权重铺（AC-3 / ADR-0003） ----------------
+
+    @Test
+    void addSucceedsButRecordFails_suspendsAndNeverAuthorizesRepublish() {
+        adapter.script(AddBehavior.SUCCESS);
+        // 注入：add 成功后的首次落库（PUBLISHED）失败；第 2 次落库（AMBIGUOUS）成功
+        startEnvWithStore(new FailingPutPublishStateStore(store, 1));
+
+        PublishWorkflow stub = launcher().start(input());
+        awaitUntil(() -> !domainEventsOf(EventTypes.LISTING_AMBIGUOUS).isEmpty());
+
+        // 原缺陷：add 已生效但落库失败被判 FAILED → workflow failed → AllowDuplicateFailedOnly 授权同 id
+        // 重铺 → inspect 查不到 platform_item_id → 再次 add → 二次铺货。修复后：挂起为 AMBIGUOUS（非终态）。
+        assertThat(state().status()).as("不得收口为授权重铺的 FAILED，而是挂起歧义")
+                .isEqualTo(PublishStatus.AMBIGUOUS);
+        assertThat(adapter.addCalls()).as("add 已生效，落库失败不得触发重发").hasSize(1);
+
+        // 人工确认已生效（带 add 返回的平台 id）→ 落库 PUBLISHED（第 3 次落库成功）→ completed
+        stub.confirmPublished("fx-item-1", "https://fixture.example.com/item/fx-item-1");
+        PublishWorkflowResult result = WorkflowStub.fromTyped(stub).getResult(PublishWorkflowResult.class);
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(adapter.addCalls()).as("全程只 add 一次").hasSize(1);
+    }
+
     // ---------------- reconcile seam：先查后发 / 歧义核实 ----------------
 
     @Test
@@ -272,7 +307,12 @@ class PublishWorkflowE2ETest {
     // ---------------- harness ----------------
 
     private void startEnv() {
-        PublishService service = new PublishService(store, adapter.getCapability(PublishCapability.class), CLOCK);
+        startEnvWithStore(store);
+    }
+
+    private void startEnvWithStore(PublishStateStore serviceStore) {
+        PublishService service =
+                new PublishService(serviceStore, adapter.getCapability(PublishCapability.class), CLOCK);
         PublishActivities activities = new PublishActivitiesImpl(service, events, "PublishWorkflow");
         env = TestWorkflowEnvironment.newInstance();
         PublishWorkerFactory.register(env.newWorker(PublishRuntime.TASK_QUEUE), activities);

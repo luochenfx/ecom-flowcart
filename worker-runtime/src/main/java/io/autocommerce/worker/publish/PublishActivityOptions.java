@@ -23,6 +23,23 @@ import java.time.Duration;
  *
  * <p>AMBIGUOUS 不在此名单：它不以失败抛出，而是 activity 正常返回 {@code AMBIGUOUS} 决策
  * （落库后由 workflow 挂起）——故绝不被退避重发（specs/0001 §5）。
+ *
+ * <h2>为什么 AC-4 的「NON_RETRYABLE → … + Saga」在本票判为 N/A（显式登记，非漏做）</h2>
+ * issue #21 AC-4 原文与 specs/0001 §5 映射表 / specs/0005 §6 同措辞为「{@code NonRetryableErrorTypes}
+ * <b>+ Saga 补偿</b>」。本票只落地 {@code NonRetryableErrorTypes}（即 {@code setDoNotRetry(REJECTED,
+ * FAILED)} 这一行），Saga 补偿<b>显式登记为不适用</b>，理由如下：
+ * <ul>
+ *   <li>本票 publish workflow 的<b>唯一外部副作用是 {@code add}</b>（一次原子外部调用，见
+ *       {@code PublishService#publish}）；</li>
+ *   <li>{@code add} 抛 NON_RETRYABLE 的语义 = 平台<b>业务拒绝、明确未生效</b>（REJECTED）——这区别于
+ *       AMBIGUOUS 的"不知是否生效"。既然该调用未在平台侧产生任何已提交的中间状态，就<b>没有需要
+ *       回滚/补偿的前置步骤</b>，Saga 在"单步外部调用"场景下无补偿对象；</li>
+ *   <li>真正需要 Saga 补偿的场景，要等 {@code add} <b>之后</b>还有后续已提交步骤（例如回填平台侧媒体
+ *       {@code platform_media_id}、或第二次平台侧写调用）才会出现——那属于后续 slice。</li>
+ * </ul>
+ *
+ * <p>另需区分：NON_RETRYABLE 落的是 {@code REJECTED}（见 {@code PublishFailure.classify}），不是
+ * FAILED——FAILED 只收口"可重试耗尽 / 非 AdapterException 缺陷"。
  */
 public final class PublishActivityOptions {
 
@@ -38,7 +55,7 @@ public final class PublishActivityOptions {
 
     /** v1 默认 activity 选项（见类 javadoc）。 */
     public static ActivityOptions defaults() {
-        return builder()
+        return ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(START_TO_CLOSE_TIMEOUT)
                 .setScheduleToCloseTimeout(SCHEDULE_TO_CLOSE_TIMEOUT)
                 .setRetryOptions(RetryOptions.newBuilder()
@@ -49,10 +66,5 @@ public final class PublishActivityOptions {
                         .setDoNotRetry(PublishActivityErrors.REJECTED, PublishActivityErrors.FAILED)
                         .build())
                 .build();
-    }
-
-    /** 可调装配入口（生产把退避参数暴露给配置时走这里）。 */
-    public static ActivityOptions.Builder builder() {
-        return ActivityOptions.newBuilder();
     }
 }

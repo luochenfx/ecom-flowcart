@@ -1,6 +1,7 @@
 package io.autocommerce.publish;
 
 import io.autocommerce.core.contract.dto.PlatformItemRef;
+import io.autocommerce.publish.testsupport.FailingPutPublishStateStore;
 import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter;
 import io.autocommerce.publish.testsupport.PublishFixtures;
 import org.junit.jupiter.api.BeforeEach;
@@ -167,6 +168,41 @@ class PublishServiceTest {
         assertThat(decision.disposition()).isEqualTo(PublishDisposition.FAILED);
         assertThat(decision.reason()).contains("IllegalStateException");
         assertThat(state().status()).isEqualTo(PublishStatus.FAILED);
+    }
+
+    // ---------------- add 已生效、落库失败 → 绝不误判 FAILED（AC-3 / ADR-0003） ----------------
+
+    @Test
+    void publish_addSucceedsButRecordFails_suspendsAmbiguous_notFailed() {
+        // 注入：add 成功后的首次 put（PUBLISHED 落库）失败；第 2 次 put（AMBIGUOUS 落库）成功
+        PublishStateStore failingStore = new FailingPutPublishStateStore(store, 1);
+        PublishService failingService = new PublishService(failingStore, adapter, CLOCK);
+
+        PublishDecision decision = failingService.publish(PublishFixtures.listing());
+
+        // 原缺陷：落库失败被归 UNEXPECTED → FAILED（授权同 id 重铺 → 二次铺货）。
+        // 修复后：归 AMBIGUOUS 挂起（非终态、不授权重铺）。
+        assertThat(decision.disposition())
+                .as("add 已生效但本地落库失败 → 挂起歧义，绝不判 FAILED（FAILED 会被 AllowDuplicateFailedOnly 授权重铺）")
+                .isEqualTo(PublishDisposition.AMBIGUOUS);
+        assertThat(adapter.addCalls()).as("add 已成功，不得因落库失败而重发").hasSize(1);
+        assertThat(state().status()).isEqualTo(PublishStatus.AMBIGUOUS);
+        assertThat(state().reason()).contains("add 已生效");
+    }
+
+    @Test
+    void publish_addSucceedsButStoreCompletelyUnavailable_isNotFailedAndDoesNotCommitTerminal() {
+        // 注入：PUBLISHED 与 AMBIGUOUS 两次落库都失败（状态库整体不可用）
+        PublishStateStore failingStore = new FailingPutPublishStateStore(store, 2);
+        PublishService failingService = new PublishService(failingStore, adapter, CLOCK);
+
+        PublishDecision decision = failingService.publish(PublishFixtures.listing());
+
+        assertThat(decision.disposition())
+                .as("连 AMBIGUOUS 都落不下时退回可重试，且绝不写终态 FAILED")
+                .isEqualTo(PublishDisposition.RETRYABLE);
+        assertThat(adapter.addCalls()).hasSize(1);
+        assertThat(store.get(PublishFixtures.LISTING_ID)).as("未落任何终态（尤其不写 FAILED）").isEmpty();
     }
 
     // ---------------- signal 驱动的落库（人工确认 / 拒绝） ----------------
