@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.autocommerce.core.message.EntityRef;
 import io.autocommerce.core.message.Envelope;
 import io.autocommerce.core.message.EventTypes;
+import io.autocommerce.core.message.ListingAmbiguousPayload;
+import io.autocommerce.core.message.ListingPublishedPayload;
 import io.autocommerce.core.message.OrderPaidPayload;
 import io.autocommerce.core.message.PurchaseShippedPayload;
 import io.autocommerce.core.message.RmaClosedPayload;
@@ -83,6 +85,30 @@ public final class DomainEvents {
                                      String closedAt) {
         return envelope(EventTypes.RMA_CLOSED, producer, new EntityRef("rma", rmaId), orderId, closedAt,
                 new RmaClosedPayload(rmaId, orderId, outcome));
+    }
+
+    /**
+     * {@code listing.published}：铺货成功（PUBLISHED 终态广播，回填 platform_item_id）。
+     *
+     * @param publishedAt 已落库事实时间（{@code PublishState.publishedAt}），<b>不可</b>传广播时刻
+     *                    ——否则 activity 重跑会产出不同 id 的第二条 envelope
+     */
+    public static Envelope listingPublished(String producer, String listingId, String platformItemId,
+                                            String publishedAt) {
+        return envelope(EventTypes.LISTING_PUBLISHED, producer, new EntityRef("listing", listingId), listingId,
+                publishedAt, new ListingPublishedPayload(listingId, platformItemId, publishedAt));
+    }
+
+    /**
+     * {@code listing.ambiguous}：铺货超时歧义挂起（等 reconcile / 人工，供看板 HITL）。
+     *
+     * @param occurredAt 已落库事实时间（{@code PublishState.updatedAt}，AMBIGUOUS 记录时刻），
+     *                   <b>不可</b>传广播时刻（同上，保幂等锚稳定）
+     */
+    public static Envelope listingAmbiguous(String producer, String listingId, String reason,
+                                            String occurredAt) {
+        return envelope(EventTypes.LISTING_AMBIGUOUS, producer, new EntityRef("listing", listingId), listingId,
+                occurredAt, new ListingAmbiguousPayload(listingId, reason));
     }
 
     private static Envelope envelope(String type, String producer, EntityRef entityRef,

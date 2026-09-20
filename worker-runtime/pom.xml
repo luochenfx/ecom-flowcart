@@ -7,10 +7,15 @@
   模块共享单步失败语义（ContentStepExecutor）——content 保持纯 Java（禁环②：不依赖 io.temporal..），
   Temporal 类型只在本模块出现。
 
+  #21 落地铺货链编排壳：`listing-{spuId}-{channelId}` 确定性 workflow（可重入检查 → reconcile-first
+  + add →（歧义挂起等 signal）），与 publish 模块共享状态机 / 落库 / Adapter 错误归类——publish 保持
+  纯 Java（禁环②），Temporal 类型只在 worker-runtime/.../publish 出现。
+
   依赖方向：core-contracts + content（业务 Step / 单步语义）+ catalog（CatalogStore 端口，读写
-  product 文档）。test：adapter-1688（demo 复用 #19 采集入口造 master 就绪 Listing）、
-  temporal-testing（时间跳跃 + in-process test service，无需 docker / Temporal CLI）、
-  WireMock（fake LLM / 媒体端点）、core-contracts test-jar（契约门）、ArchUnit（workflow 确定性禁则）。
+  product 文档）+ order（订单域服务）+ publish（铺货域服务）。test：adapter-1688（demo 复用 #19 采集
+  入口造 master 就绪 Listing）、temporal-testing（时间跳跃 + in-process test service，无需 docker /
+  Temporal CLI）、WireMock（fake LLM / 媒体端点）、core-contracts test-jar（契约门）、
+  ArchUnit（workflow 确定性禁则）。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -62,6 +67,13 @@
       <artifactId>order</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- publish 域服务：铺货链 activity 侧（可重入检查 / reconcile-first + add / 状态机落库）；
+         编排只依赖 publish 的端口与领域服务，不直连平台类（禁环②） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>publish</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <dependency>
       <groupId>io.temporal</groupId>
       <artifactId>temporal-sdk</artifactId>
@@ -103,6 +115,15 @@
     <dependency>
       <groupId>io.autocommerce</groupId>
       <artifactId>order</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- 铺货链 demo 复用 publish 模块的 fixture 假 adapter（PublishCapability，Java SPI 装配）
+         + Listing fixture -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>publish</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
