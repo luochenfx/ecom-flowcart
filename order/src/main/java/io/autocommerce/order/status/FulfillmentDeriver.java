@@ -23,7 +23,9 @@ import java.util.Set;
  */
 public final class FulfillmentDeriver {
 
-    /** 已过支付点的履约态（含"待采购"及以后）——用于 order.paid 事件判定。 */
+    /**
+     * 已过支付点的履约态（含"待采购"及以后）——用于 order.paid 事件判定。
+     */
     private static final Set<FulfillmentStatus> PAID_OR_LATER = Set.of(
             FulfillmentStatus.AWAITING_PURCHASE,
             FulfillmentStatus.PURCHASING,
@@ -33,23 +35,31 @@ public final class FulfillmentDeriver {
             FulfillmentStatus.REFUNDING,
             FulfillmentStatus.DISPUTED);
 
-    /** 采购侧"已发货"态（用于销售侧聚合）。 */
+    /**
+     * 采购侧"已发货"态（用于销售侧聚合）。
+     */
     private static final Set<PurchaseStatus> PURCHASE_SHIPPED = Set.of(
             PurchaseStatus.SHIPPED, PurchaseStatus.COMPLETED);
 
-    /** RMA 未收敛态（"还没结束"——销售侧据此派生 REFUNDING / DISPUTED）。 */
+    /**
+     * RMA 未收敛态（"还没结束"——销售侧据此派生 REFUNDING / DISPUTED）。
+     */
     private static final Set<RmaStatus> RMA_OPEN = Set.of(
             RmaStatus.OPEN, RmaStatus.WAITING_SELLER, RmaStatus.WAITING_BUYER,
             RmaStatus.PARTIAL_REFUNDED, RmaStatus.ESCALATED);
 
-    /** RMA 终态（据此发 rma.closed）。 */
+    /**
+     * RMA 终态（据此发 rma.closed）。
+     */
     private static final Set<RmaStatus> RMA_TERMINAL = Set.of(
             RmaStatus.REFUNDED, RmaStatus.PARTIAL_REFUNDED, RmaStatus.CLOSED, RmaStatus.REJECTED);
 
     private FulfillmentDeriver() {
     }
 
-    /** 销售订单是否已过支付点（order.paid 事件判定）。 */
+    /**
+     * 销售订单是否已过支付点（order.paid 事件判定）。
+     */
     public static boolean isPaid(FulfillmentStatus status) {
         return status != null && PAID_OR_LATER.contains(status);
     }
@@ -74,7 +84,9 @@ public final class FulfillmentDeriver {
         return withRmas(salesFromPurchases(purchases), rmas);
     }
 
-    /** 销售履约轴 ← 采购单集合派生（无采购 = AWAITING_PURCHASE；部分/全部发货）。{@link #deriveSales} 内部基元。 */
+    /**
+     * 销售履约轴 ← 采购单集合派生（无采购 = AWAITING_PURCHASE；部分/全部发货）。{@link #deriveSales} 内部基元。
+     */
     private static FulfillmentStatus salesFromPurchases(List<PurchaseOrder> purchases) {
         if (purchases == null || purchases.isEmpty()) {
             return FulfillmentStatus.AWAITING_PURCHASE;
@@ -103,7 +115,9 @@ public final class FulfillmentDeriver {
         return dispute ? FulfillmentStatus.DISPUTED : FulfillmentStatus.REFUNDING;
     }
 
-    /** RMA 终态 → {@code rma.closed} 事件 outcome（未终结返回 null，不发事件）。 */
+    /**
+     * RMA 终态 → {@code rma.closed} 事件 outcome（未终结返回 null，不发事件）。
+     */
     public static RmaOutcome outcomeFor(RmaStatus status) {
         if (status == null) {
             return null;

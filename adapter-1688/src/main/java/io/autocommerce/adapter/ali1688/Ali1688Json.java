@@ -14,7 +14,9 @@ final class Ali1688Json {
     private Ali1688Json() {
     }
 
-    /** 取值节点的文本；不是值节点（对象 / 数组 / 缺失）→ {@code null}。 */
+    /**
+     * 取值节点的文本；不是值节点（对象 / 数组 / 缺失）→ {@code null}。
+     */
     static String text(JsonNode node, String field) {
         JsonNode value = node.path(field);
         return value.isValueNode() ? value.asText() : null;

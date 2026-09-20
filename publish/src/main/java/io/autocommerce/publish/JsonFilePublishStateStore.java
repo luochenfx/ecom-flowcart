@@ -36,7 +36,7 @@ public final class JsonFilePublishStateStore implements PublishStateStore {
         this.file = root.resolve("publish-states.json");
         this.mapper = new ObjectMapper()
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
                 .enable(SerializationFeature.INDENT_OUTPUT);
     }
 

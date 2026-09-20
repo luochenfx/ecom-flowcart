@@ -29,7 +29,9 @@ import java.util.Map;
  */
 public record Ali1688Credential(String appKey, String appSecret, String accessToken, String refreshToken) {
 
-    /** 凭据类型（与 {@code Credential.type} / {@code CredentialView.type} 对齐）。 */
+    /**
+     * 凭据类型（与 {@code Credential.type} / {@code CredentialView.type} 对齐）。
+     */
     public static final String TYPE = "1688";
 
     static final String KEY_APP_KEY = "app_key";
@@ -37,7 +39,9 @@ public record Ali1688Credential(String appKey, String appSecret, String accessTo
     static final String KEY_ACCESS_TOKEN = "access_token";
     static final String KEY_REFRESH_TOKEN = "refresh_token";
 
-    /** 凭据键缺失消息后缀（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。 */
+    /**
+     * 凭据键缺失消息后缀（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。
+     */
     private static final String MISSING_KEY_SUFFIX = "（secrets 键规范见 Ali1688Credential javadoc）";
 
     public Ali1688Credential {
@@ -49,7 +53,9 @@ public record Ali1688Credential(String appKey, String appSecret, String accessTo
                 "1688 凭据缺少必需键 " + KEY_ACCESS_TOKEN + MISSING_KEY_SUFFIX);
     }
 
-    /** 从 Channel 域交来的解密视图取凭据；缺任一必填键 = 配置问题（NON_RETRYABLE，重试无意义）。 */
+    /**
+     * 从 Channel 域交来的解密视图取凭据；缺任一必填键 = 配置问题（NON_RETRYABLE，重试无意义）。
+     */
     public static Ali1688Credential from(CredentialView view) {
         if (view == null) {
             throw AdapterException.nonRetryable("missing-credential",
@@ -60,7 +66,9 @@ public record Ali1688Credential(String appKey, String appSecret, String accessTo
                 secrets.get(KEY_ACCESS_TOKEN), secrets.get(KEY_REFRESH_TOKEN));
     }
 
-    /** 由本凭据组装 CredentialView（{@link Ali1688Auth#refresh} 的出参形态）。 */
+    /**
+     * 由本凭据组装 CredentialView（{@link Ali1688Auth#refresh} 的出参形态）。
+     */
     CredentialView toCredentialView(String expiresAt, String refreshedAccessToken,
                                     String refreshedRefreshToken) {
         Map<String, String> secrets = new LinkedHashMap<>();

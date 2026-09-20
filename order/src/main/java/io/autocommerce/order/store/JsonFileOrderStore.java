@@ -32,7 +32,9 @@ import java.util.Optional;
  */
 public final class JsonFileOrderStore implements OrderStore {
 
-    /** 与 order.schema.json 的 {@code schema_version} const 一致。 */
+    /**
+     * 与 order.schema.json 的 {@code schema_version} const 一致。
+     */
     static final String SCHEMA_VERSION = "0.1.0";
 
     private final Path file;
@@ -42,7 +44,7 @@ public final class JsonFileOrderStore implements OrderStore {
         this.file = root.resolve("orders.json");
         this.mapper = new ObjectMapper()
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
                 .enable(SerializationFeature.INDENT_OUTPUT);
     }
 
@@ -139,15 +141,14 @@ public final class JsonFileOrderStore implements OrderStore {
 
     // ---------------- 内部：聚合抽取 / 合并 ----------------
 
-    /** 从全量文档抽出单订单聚合（只含该 orderId 的实体 + 空游标）。 */
+    /**
+     * 从全量文档抽出单订单聚合（只含该 orderId 的实体 + 空游标）。
+     */
     static Optional<OrderModel> extract(OrderModel doc, String orderId) {
         Optional<Order> order = doc.orders().stream()
                 .filter(o -> o.orderId().equals(orderId))
                 .findFirst();
-        if (order.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.of(new OrderModel(SCHEMA_VERSION, List.of(order.get()),
+        return order.map(value -> new OrderModel(SCHEMA_VERSION, List.of(value),
                 filterByOrderId(doc.orderLines(), OrderLine::orderId, orderId),
                 filterByOrderId(doc.orderSnapshots(), OrderSnapshot::orderId, orderId),
                 filterByOrderId(doc.purchaseOrders(), PurchaseOrder::orderId, orderId),
@@ -163,7 +164,9 @@ public final class JsonFileOrderStore implements OrderStore {
                 .flatMap(o -> extract(doc, o.orderId()));
     }
 
-    /** 把单订单聚合并入全量文档（保持既有订单与游标）。 */
+    /**
+     * 把单订单聚合并入全量文档（保持既有订单与游标）。
+     */
     private static OrderModel merge(OrderModel doc, OrderModel aggregate) {
         return new OrderModel(SCHEMA_VERSION,
                 concat(doc.orders(), aggregate.orders()),
@@ -174,7 +177,9 @@ public final class JsonFileOrderStore implements OrderStore {
                 doc.channelSyncStates());
     }
 
-    /** 用聚合替换全量文档中同 orderId 的部分（先剔除旧实体，再并入新实体）。 */
+    /**
+     * 用聚合替换全量文档中同 orderId 的部分（先剔除旧实体，再并入新实体）。
+     */
     private static OrderModel replace(OrderModel doc, OrderModel aggregate) {
         String orderId = singleOrder(aggregate).orderId();
         return new OrderModel(SCHEMA_VERSION,
@@ -193,7 +198,7 @@ public final class JsonFileOrderStore implements OrderStore {
             throw new IllegalArgumentException(
                     "OrderStore 存储单元 = 单个订单聚合文档，orders() 必须恰 1 条");
         }
-        return aggregate.orders().get(0);
+        return aggregate.orders().getFirst();
     }
 
     /**

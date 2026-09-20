@@ -34,7 +34,9 @@ import java.util.Map;
  */
 public final class Ali1688Auth implements AuthCapability {
 
-    /** OAuth2.0 换票端点路径（不需签名；与 param2 业务端点不同前缀）。 */
+    /**
+     * OAuth2.0 换票端点路径（不需签名；与 param2 业务端点不同前缀）。
+     */
     static final String AUTH_PATH = "/auth/system.oauth2/getToken";
 
     static final String GRANT_TYPE_REFRESH_TOKEN = "refresh_token";

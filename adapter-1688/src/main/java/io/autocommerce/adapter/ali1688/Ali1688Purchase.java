@@ -33,13 +33,19 @@ import java.util.Map;
  */
 public final class Ali1688Purchase implements PurchaseCapability {
 
-    /** 一件代发（代销）下单通道；官方 flow 枚举：general / fenxiao / saleproxy / paired / repurchase… */
+    /**
+     * 一件代发（代销）下单通道；官方 flow 枚举：general / fenxiao / saleproxy / paired / repurchase…
+     */
     static final String FLOW_SALEPROXY = "saleproxy";
 
-    /** 官方 cancelReason 取值之一；契约 cancelPurchase 无"原因"入参，固定为 other。 */
+    /**
+     * 官方 cancelReason 取值之一；契约 cancelPurchase 无"原因"入参，固定为 other。
+     */
     static final String CANCEL_REASON_OTHER = "other";
 
-    /** 缺必填参数消息（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。 */
+    /**
+     * 缺必填参数消息（errorCode 与判定统一走 {@link Ali1688ErrorMapping}）。
+     */
     private static final String MISSING_PARAM_ERROR_CODE = "missing-required-field";
     private static final String MISSING_PARAM_SUFFIX = "（platformPurchaseNo）";
 

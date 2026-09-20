@@ -35,7 +35,9 @@ public final class AddressCipher {
     private final SecureRandom random = new SecureRandom();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** @param key AES-256 密钥（恰 32 字节），由装配点从与凭据加密同源的密钥管理注入 */
+    /**
+     * @param key AES-256 密钥（恰 32 字节），由装配点从与凭据加密同源的密钥管理注入
+     */
     public AddressCipher(byte[] key) {
         if (key == null || key.length != 32) {
             throw new IllegalArgumentException("AES-256-GCM 密钥必须为 32 字节");
@@ -43,7 +45,9 @@ public final class AddressCipher {
         this.key = new SecretKeySpec(key, "AES");
     }
 
-    /** 明文地址 → 加密负载（base64）。 */
+    /**
+     * 明文地址 → 加密负载（base64）。
+     */
     public String encrypt(DecryptedAddress address) {
         try {
             byte[] iv = new byte[IV_BYTES];
@@ -61,7 +65,9 @@ public final class AddressCipher {
         }
     }
 
-    /** 加密负载 → 明文地址（仅结算前在内存短暂出现；调用方须避免落日志）。 */
+    /**
+     * 加密负载 → 明文地址（仅结算前在内存短暂出现；调用方须避免落日志）。
+     */
     public DecryptedAddress decrypt(String payload) {
         try {
             byte[] all = Base64.getDecoder().decode(payload);
@@ -77,7 +83,9 @@ public final class AddressCipher {
         }
     }
 
-    /** 便于装配点从配置字符串构造密钥（UTF-8 编解码；长度校验由构造器承担）。 */
+    /**
+     * 便于装配点从配置字符串构造密钥（UTF-8 编解码；长度校验由构造器承担）。
+     */
     public static AddressCipher fromSecret(String secret) {
         if (secret == null) {
             throw new IllegalArgumentException("地址加密密钥字符串不能为空");

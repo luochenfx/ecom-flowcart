@@ -27,9 +27,13 @@ final class Ali1688RateLimiter {
     private final LongSupplier nanoTime;
     private final LongConsumer sleepNanos;
 
-    /** 当前桶内令牌数（可为小数，按时间连续补充）。 */
+    /**
+     * 当前桶内令牌数（可为小数，按时间连续补充）。
+     */
     private double storedPermits;
-    /** 上次补充令牌的时刻（纳秒）。 */
+    /**
+     * 上次补充令牌的时刻（纳秒）。
+     */
     private long lastNanos;
 
     Ali1688RateLimiter(double permitsPerSecond, int capacity) {
@@ -52,7 +56,9 @@ final class Ali1688RateLimiter {
         this.lastNanos = nanoTime.getAsLong();
     }
 
-    /** 取一个令牌；不足则睡到令牌补齐（本地排队，绝不抛 429）。 */
+    /**
+     * 取一个令牌；不足则睡到令牌补齐（本地排队，绝不抛 429）。
+     */
     synchronized void acquire() {
         long now = nanoTime.getAsLong();
         storedPermits = Math.min(capacity,

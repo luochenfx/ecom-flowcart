@@ -108,7 +108,7 @@ public final class OrderSyncService {
                 .findFirst()
                 .orElseGet(() -> {
                     if (snapshots.size() == 1) {
-                        return snapshots.get(0);
+                        return snapshots.getFirst();
                     }
                     throw new IllegalStateException("拉取页缺订单建单快照: " + order.orderId()
                             + " snapshotId=" + order.snapshotId());

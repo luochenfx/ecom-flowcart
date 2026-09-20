@@ -37,7 +37,9 @@ final class Ali1688Gateway {
     static final String PARAM_WEB_SITE = "webSite";
     static final String SITE_1688 = "1688";
 
-    /** 错误消息用端点标签（{@link Ali1688ErrorMapping} 拼装 HTTP 故障文案）。 */
+    /**
+     * 错误消息用端点标签（{@link Ali1688ErrorMapping} 拼装 HTTP 故障文案）。
+     */
     private static final String ENDPOINT_LABEL = "1688 网关";
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
@@ -93,7 +95,9 @@ final class Ali1688Gateway {
         return body;
     }
 
-    /** 补系统参数并签名：参与签名的 = 除 {@code _aop_signature} 外全部实际发送参数。 */
+    /**
+     * 补充系统参数并签名：参与签名的 = 除 {@code _aop_signature} 外全部实际发送参数。
+     */
     private Map<String, String> signedParams(Ali1688Api api, Ali1688Credential credential,
                                              Map<String, String> params) {
         Map<String, String> all = new LinkedHashMap<>(params);
@@ -151,7 +155,9 @@ final class Ali1688Gateway {
         throw Ali1688ErrorMapping.businessRejection(code, message);
     }
 
-    /** 未装配凭据 = 配置问题（NON_RETRYABLE，重试无意义）。 */
+    /**
+     * 未装配凭据 = 配置问题（NON_RETRYABLE，重试无意义）。
+     */
     private Ali1688Credential requireCredential() {
         Ali1688Credential credential = config.credential();
         if (credential == null) {
