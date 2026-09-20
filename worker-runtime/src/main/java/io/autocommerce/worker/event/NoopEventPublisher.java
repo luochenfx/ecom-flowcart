@@ -1,5 +1,7 @@
 package io.autocommerce.worker.event;
 
+import io.autocommerce.core.message.Envelope;
+
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -13,14 +15,25 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class NoopEventPublisher implements EventPublisher {
 
     private final List<SysWorkflowFailedEvent> failed = new CopyOnWriteArrayList<>();
+    private final List<Envelope> domainEvents = new CopyOnWriteArrayList<>();
 
     @Override
     public void publishFailed(SysWorkflowFailedEvent event) {
         failed.add(event);
     }
 
+    @Override
+    public void publishDomainEvent(Envelope envelope) {
+        domainEvents.add(envelope);
+    }
+
     /** 测试断言用：已被发布的失败事件快照。 */
     public List<SysWorkflowFailedEvent> publishedFailedEvents() {
         return List.copyOf(failed);
+    }
+
+    /** 测试断言用：已被广播的 Domain Event 快照。 */
+    public List<Envelope> publishedDomainEvents() {
+        return List.copyOf(domainEvents);
     }
 }

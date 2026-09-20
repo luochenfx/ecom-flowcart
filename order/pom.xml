@@ -2,7 +2,21 @@
 <!--
   order —— 订单域（ADR-0005：#8）。职责：同步（拉取为真相、webhook 为唤醒信号）/ 建单快照
   OrderSnapshot / 采购单 1:N / RMA / 发货回传；每单独立 workflow；下采购单前解密地址。
-  骨架阶段无业务源码，业务由 ticket #22 落地。依赖方向：仅 core-contracts。
+  业务由 ticket #22 落地。
+
+  依赖方向：main 仅 core-contracts（禁环②：不直连平台 SDK / 模型类；零 Spring / 零 Temporal——
+  业务逻辑模块保持纯 Java，编排壳（Temporal workflow/activity）落 worker-runtime 这个 composition
+  root，与 #19「catalog 纯 Java、装配归 composition root」同例）。jackson-databind 由 core-contracts
+  传递（文档库序列化显式声明）。
+
+  v1 存储形态（#22 决议，对齐 #19 CatalogStore 范式）：OrderStore 端口 + schema 校验 JSON 文档库
+  （JsonFileOrderStore）。真库（Postgres/JPA）表结构属设计期未决区，留待装配点单独收敛——同一
+  OrderStore 端口换实现。落库的幂等第二级（DB (channel_id, platform_order_no) unique）在端口语义化。
+
+  test：core-contracts test-jar（ContractSchemas / ContractAssertions 复用通道，Testing §1 契约门）、
+  ArchUnit（本模块禁环②）。fixture 假 OrderSync / Purchase adapter 落本模块 test 作用域（禁环②：不让
+  业务模块依赖平台类；也不塞 adapter-1688——它是真实 Adapter，归 #23），随 test-jar 暴露给
+  worker-runtime 的端到端 demo 复用。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -26,5 +40,53 @@
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
     </dependency>
+
+    <!-- test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 契约测试基座（ContractSchemas / ContractAssertions，随 core-contracts test-jar 分发） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>core-contracts</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- JSON Schema 契约校验器（ContractSchemas 返回 JsonSchema，test scope 不传递，此处显式声明） -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- fixture 假 adapter（testsupport 包）随 test-jar 暴露给 worker-runtime 端到端 demo 复用 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

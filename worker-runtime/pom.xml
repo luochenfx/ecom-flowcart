@@ -55,6 +55,13 @@
       <artifactId>catalog</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- order 域服务：订单链 activity 侧（同步落库 / 拆采购单 / 解密地址 / 发货回传 / RMA 读）；
+         编排只依赖 order 的端口与领域服务，不直连平台类（禁环②） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>order</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <dependency>
       <groupId>io.temporal</groupId>
       <artifactId>temporal-sdk</artifactId>
@@ -89,6 +96,15 @@
       <groupId>io.autocommerce</groupId>
       <artifactId>adapter-1688</artifactId>
       <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- 订单链 demo 复用 order 模块的 fixture 假 adapter（OrderSync / Purchase / Shipment / Rma /
+         Address，Java SPI 装配）+ 订单文档 fixture -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>order</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
       <scope>test</scope>
     </dependency>
     <dependency>
