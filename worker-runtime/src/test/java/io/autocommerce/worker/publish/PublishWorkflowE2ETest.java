@@ -1,0 +1,330 @@
+package io.autocommerce.worker.publish;
+
+import io.autocommerce.core.contract.PlatformAdapterProvider;
+import io.autocommerce.core.contract.PublishCapability;
+import io.autocommerce.core.contract.dto.PlatformItemRef;
+import io.autocommerce.core.message.Envelope;
+import io.autocommerce.core.message.EventTypes;
+import io.autocommerce.core.testutil.ContractAssertions;
+import io.autocommerce.core.testutil.ContractSchemas;
+import io.autocommerce.publish.JsonFilePublishStateStore;
+import io.autocommerce.publish.PublishService;
+import io.autocommerce.publish.PublishState;
+import io.autocommerce.publish.PublishStatus;
+import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter;
+import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter.AddBehavior;
+import io.autocommerce.publish.testsupport.PublishFixtures;
+import io.autocommerce.worker.event.NoopEventPublisher;
+import io.temporal.client.WorkflowException;
+import io.temporal.client.WorkflowStub;
+import io.temporal.testing.TestWorkflowEnvironment;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.ServiceLoader;
+import java.util.function.BooleanSupplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * 铺货链端到端 demo（#21 AC-7 + AC-1/AC-2/AC-3/AC-4/AC-5/AC-6）：**内容就绪 Listing → 可重入检查 →
+ * reconcile-first + add →（歧义挂起 + 人工 signal）→ 收敛 → 事件广播** 全链，经 fixture 假
+ * {@link PublishCapability} adapter 驱动、真实域服务（{@link PublishService} / 存储）+ 真实 Temporal
+ * workflow 跑（in-process test service，无需 docker / CLI）。
+ *
+ * <p>刻意不 mock 业务逻辑：PublishService / JsonFilePublishStateStore / PublishActivitiesImpl /
+ * PublishWorkflowImpl 都是真实实现，只有外部平台是假的。三条路径（成功 / 歧义挂起 + 人工恢复 /
+ * 业务拒绝收尾）全覆盖，另加：幂等复用、reconcile 回填、可重试耗尽 → FAILED、非 AdapterException → FAILED。
+ */
+class PublishWorkflowE2ETest {
+
+    private static final String LISTING_ID = PublishFixtures.LISTING_ID;
+    private static final Clock CLOCK =
+            Clock.fixed(Instant.parse(PublishFixtures.PUBLISHED_AT), ZoneOffset.UTC);
+
+    @TempDir
+    Path tempDir;
+
+    private FixturePublishPlatformAdapter adapter;
+    private JsonFilePublishStateStore store;
+    private NoopEventPublisher events;
+    private TestWorkflowEnvironment env;
+
+    @BeforeEach
+    void setUp() {
+        adapter = provider();
+        store = new JsonFilePublishStateStore(tempDir.resolve("publish"));
+        events = new NoopEventPublisher();
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (env != null) {
+            env.close();
+        }
+    }
+
+    // ---------------- 路径 1：成功 ----------------
+
+    @Test
+    void successPath_publishesBroadcastsAndIsIdempotentOnRepeat() {
+        adapter.script(AddBehavior.SUCCESS);
+        startEnv();
+
+        PublishWorkflowResult result = launcher().run(input());
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(result.reused()).isFalse();
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(state().platformItemId()).isEqualTo("fx-item-1");
+        assertThat(adapter.addCalls()).hasSize(1);
+
+        List<Envelope> published = domainEventsOf(EventTypes.LISTING_PUBLISHED);
+        assertThat(published).hasSize(1);
+        assertPayloadsPassSchema();
+
+        assertThat(env.getWorkflowClient().fetchHistory(LISTING_ID).getWorkflowExecution().getWorkflowId())
+                .as("确定性 workflowId = listing-{spuId}-{channelId} = listingId")
+                .isEqualTo(LISTING_ID);
+
+        // 前一次 completed → 重复指令不产生新 run、不重复 add、不重发事件（ADR-0003）
+        int addsBefore = adapter.addCalls().size();
+        int eventsBefore = events.publishedDomainEvents().size();
+        PublishWorkflowResult repeated = launcher().run(input());
+        assertThat(repeated.platformItemId()).isEqualTo(result.platformItemId());
+        assertThat(adapter.addCalls()).as("completed 后重复触发不得再次 add").hasSize(addsBefore);
+        assertThat(events.publishedDomainEvents()).hasSize(eventsBefore);
+        assertThat(store.list()).hasSize(1);
+    }
+
+    // ---------------- 路径 2：歧义挂起 + 人工 signal 恢复 ----------------
+
+    @Test
+    void ambiguousPath_suspendsThenHumanConfirmationCompletes() {
+        adapter.script(AddBehavior.AMBIGUOUS);
+        startEnv();
+
+        PublishWorkflow stub = launcher().start(input());
+        awaitUntil(() -> !domainEventsOf(EventTypes.LISTING_AMBIGUOUS).isEmpty());
+
+        // 挂起态：AMBIGUOUS 已落库 + 广播，workflow 尚未终态
+        assertThat(state().status()).isEqualTo(PublishStatus.AMBIGUOUS);
+        assertThat(domainEventsOf(EventTypes.LISTING_AMBIGUOUS)).hasSize(1);
+        assertPayloadsPassSchema();
+
+        // 人工确认已生效（回填平台引用）
+        stub.confirmPublished("fx-item-human", "https://fixture.example.com/item/fx-item-human");
+        PublishWorkflowResult result = WorkflowStub.fromTyped(stub).getResult(PublishWorkflowResult.class);
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-human");
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(adapter.addCalls()).as("人工确认回填不重复 add").hasSize(1);
+        assertThat(domainEventsOf(EventTypes.LISTING_PUBLISHED)).hasSize(1);
+    }
+
+    @Test
+    void ambiguousPath_thenNotEffective_retriesAdd() {
+        adapter.script(AddBehavior.AMBIGUOUS, AddBehavior.SUCCESS);
+        startEnv();
+
+        PublishWorkflow stub = launcher().start(input());
+        awaitUntil(() -> !domainEventsOf(EventTypes.LISTING_AMBIGUOUS).isEmpty());
+
+        stub.confirmNotEffective();
+        PublishWorkflowResult result = WorkflowStub.fromTyped(stub).getResult(PublishWorkflowResult.class);
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(adapter.addCalls()).as("确认未生效 → 重试 add").hasSize(2);
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+    }
+
+    @Test
+    void ambiguousPath_thenReject_failsAsRejected() {
+        adapter.script(AddBehavior.AMBIGUOUS);
+        startEnv();
+
+        PublishWorkflow stub = launcher().start(input());
+        awaitUntil(() -> !domainEventsOf(EventTypes.LISTING_AMBIGUOUS).isEmpty());
+
+        stub.reject("人工判定：平台侧无此商品，且拒绝重试");
+        assertThatThrownBy(() -> WorkflowStub.fromTyped(stub).getResult(PublishWorkflowResult.class))
+                .isInstanceOf(WorkflowException.class);
+
+        assertThat(state().status()).isEqualTo(PublishStatus.REJECTED);
+        assertThat(state().reason()).contains("人工判定");
+    }
+
+    // ---------------- 路径 3：业务拒绝收尾 ----------------
+
+    @Test
+    void rejectedPath_workflowFailsAndRerunIsAllowed() {
+        adapter.script(AddBehavior.NON_RETRYABLE);
+        startEnv();
+
+        assertThatThrownBy(() -> launcher().run(input())).isInstanceOf(WorkflowException.class);
+        assertThat(state().status()).isEqualTo(PublishStatus.REJECTED);
+        assertThat(state().reason()).contains("FX_CATEGORY_INVALID");
+        assertThat(adapter.addCalls()).hasSize(1);
+
+        // 人工修复后重铺 = 同一 workflowId 新 run（AllowDuplicateFailedOnly 放行 failed）
+        adapter.script(AddBehavior.SUCCESS);
+        PublishWorkflowResult retried = launcher().run(input());
+        assertThat(retried.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+    }
+
+    // ---------------- 可重试：退避重试 + 耗尽 → FAILED ----------------
+
+    @Test
+    void retryableThenSuccess_retriesAndPublishes() {
+        adapter.script(AddBehavior.RETRYABLE, AddBehavior.SUCCESS);
+        startEnv();
+
+        PublishWorkflowResult result = launcher().run(input());
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(adapter.addCalls()).as("一次 RETRYABLE 后被 RetryPolicy 重试成功").hasSize(2);
+    }
+
+    @Test
+    void retryableExhausted_recordsFailedAndWorkflowFails() {
+        adapter.addFallback(AddBehavior.RETRYABLE);
+        startEnv();
+
+        assertThatThrownBy(() -> launcher().run(input())).isInstanceOf(WorkflowException.class);
+
+        assertThat(adapter.addCalls()).as("MaximumAttempts = 5").hasSize(5);
+        assertThat(state().status()).isEqualTo(PublishStatus.FAILED);
+    }
+
+    // ---------------- 非 AdapterException = bug：不重试到死 ----------------
+
+    @Test
+    void nonAdapterException_isBug_recordedFailedWithoutRetry() {
+        adapter.script(AddBehavior.BUG);
+        startEnv();
+
+        assertThatThrownBy(() -> launcher().run(input())).isInstanceOf(WorkflowException.class);
+
+        assertThat(adapter.addCalls()).as("bug 按 NON_RETRYABLE 收口，不重试到死").hasSize(1);
+        assertThat(state().status()).isEqualTo(PublishStatus.FAILED);
+        assertThat(state().reason()).contains("IllegalStateException");
+    }
+
+    // ---------------- reconcile seam：先查后发 / 歧义核实 ----------------
+
+    @Test
+    void reconcileConfirmsExistingListing_backfillsWithoutAdd() {
+        adapter.scriptReconcile(
+                new PlatformItemRef("fx-item-existing", "https://fixture.example.com/item/existing"));
+        startEnv();
+
+        PublishWorkflowResult result = launcher().run(input());
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-existing");
+        assertThat(adapter.addCalls()).as("reconcile 有果 → 不重复 add").isEmpty();
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(domainEventsOf(EventTypes.LISTING_PUBLISHED)).hasSize(1);
+    }
+
+    @Test
+    void ambiguousThenReconcileConfirms_backfillsWithoutSuspending() {
+        adapter.script(AddBehavior.AMBIGUOUS)
+                .scriptReconcile(null, new PlatformItemRef("fx-item-recon",
+                        "https://fixture.example.com/item/recon"));
+        startEnv();
+
+        PublishWorkflowResult result = launcher().run(input());
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-recon");
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(domainEventsOf(EventTypes.LISTING_AMBIGUOUS)).as("reconcile 核实到已生效 → 未挂起")
+                .isEmpty();
+        assertThat(adapter.addCalls()).hasSize(1);
+    }
+
+    // ---------------- 可重入：预置 PUBLISHED 事实 → 不触外部 ----------------
+
+    @Test
+    void reentrancy_prePublishedState_shortCircuitsWithoutExternalCall() {
+        store.put(new PublishState(LISTING_ID, PublishStatus.PUBLISHED, "fx-item-preexisting",
+                "https://fixture.example.com/item/pre", PublishFixtures.PUBLISHED_AT, null,
+                PublishFixtures.PUBLISHED_AT));
+        startEnv();
+
+        PublishWorkflowResult result = launcher().run(input());
+
+        assertThat(result.reused()).isTrue();
+        assertThat(result.platformItemId()).isEqualTo("fx-item-preexisting");
+        assertThat(adapter.addCalls()).isEmpty();
+        assertThat(adapter.reconcileCalls()).as("可重入命中短路，不触外部调用").isEmpty();
+        assertThat(events.publishedDomainEvents()).as("既有事实不重发事件").isEmpty();
+    }
+
+    // ---------------- harness ----------------
+
+    private void startEnv() {
+        PublishService service = new PublishService(store, adapter.getCapability(PublishCapability.class), CLOCK);
+        PublishActivities activities = new PublishActivitiesImpl(service, events, "PublishWorkflow");
+        env = TestWorkflowEnvironment.newInstance();
+        PublishWorkerFactory.register(env.newWorker(PublishRuntime.TASK_QUEUE), activities);
+        env.start();
+    }
+
+    private PublishWorkflowLauncher launcher() {
+        return new PublishWorkflowLauncher(env.getWorkflowClient(), PublishRuntime.TASK_QUEUE);
+    }
+
+    private static PublishWorkflowInput input() {
+        return new PublishWorkflowInput(PublishFixtures.listing());
+    }
+
+    private PublishState state() {
+        return store.get(LISTING_ID).orElseThrow();
+    }
+
+    private List<Envelope> domainEventsOf(String type) {
+        return events.publishedDomainEvents().stream().filter(e -> type.equals(e.type())).toList();
+    }
+
+    private void assertPayloadsPassSchema() {
+        for (Envelope envelope : events.publishedDomainEvents()) {
+            ContractAssertions.assertValid(ContractSchemas.payloadFor(envelope.type()), envelope.payload(),
+                    "事件 payload: " + envelope.type());
+        }
+    }
+
+    private static void awaitUntil(BooleanSupplier condition) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待被中断", e);
+            }
+        }
+        throw new AssertionError("等待条件超时（10s）");
+    }
+
+    private static FixturePublishPlatformAdapter provider() {
+        return ServiceLoader.load(PlatformAdapterProvider.class).stream()
+                .map(ServiceLoader.Provider::get)
+                .filter(p -> FixturePublishPlatformAdapter.PLATFORM.equals(p.platform()))
+                .map(FixturePublishPlatformAdapter.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("classpath 未发现 fixture 铺货 adapter: "
+                        + FixturePublishPlatformAdapter.PLATFORM + "（publish test-jar 是否在 test classpath?）"));
+    }
+}
