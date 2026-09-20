@@ -11,7 +11,8 @@ import io.temporal.workflow.Workflow;
  * {@code ContentWorkflowImpl} 同例）。
  *
  * <p>业务链：<b>可重入检查</b>（{@link PublishActivities#inspect}）→ <b>reconcile-first + add</b>
- * （{@link PublishActivities#publish}）→（{@code AMBIGUOUS} 则挂起等 signal）→ 收敛。
+ * （{@link PublishActivities#publish}）→（{@code AMBIGUOUS} / {@code SUSPENDED_UNRECORDED} 则挂起等
+ * signal）→ 收敛。
  *
  * <p>失败分流（AC-4）：
  * <ul>
@@ -46,7 +47,7 @@ public final class PublishWorkflowImpl implements PublishWorkflow {
             if (attempt.published()) {
                 return toResult(attempt);
             }
-            // AMBIGUOUS：非终态，挂起等人工/对账 signal（specs/0001 §3；重复 start 仍 AlreadyStarted）
+            // AMBIGUOUS / SUSPENDED_UNRECORDED：非终态，挂起等人工/对账 signal（specs/0001 §3；重复 start 仍 AlreadyStarted）
             Workflow.await(() -> resolution != null);
             Resolution decided = resolution;
             resolution = null; // 消费后置空：下一轮 await 只认新到的 signal

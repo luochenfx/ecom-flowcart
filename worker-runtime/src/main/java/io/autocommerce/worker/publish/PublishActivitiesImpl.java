@@ -41,7 +41,7 @@ public final class PublishActivitiesImpl implements PublishActivities {
         PublishDecision decision = service.publish(input.listing());
         emit(decision);
         switch (decision.disposition()) {
-            case NEEDS_ADD, ALREADY_PUBLISHED, PUBLISHED, AMBIGUOUS -> {
+            case NEEDS_ADD, ALREADY_PUBLISHED, PUBLISHED, AMBIGUOUS, SUSPENDED_UNRECORDED -> {
                 return decision;
             }
             case REJECTED -> throw ApplicationFailure.newNonRetryableFailure(
@@ -76,6 +76,11 @@ public final class PublishActivitiesImpl implements PublishActivities {
      * 落库之后才广播（specs/0016 §0.3）。仅 PUBLISHED / AMBIGUOUS 有对应 Domain Event
      * （listing.published / listing.ambiguous）；REJECTED / FAILED 无领域事件（终态由投影 + Temporal
      * 承载），故不 emit。
+     *
+     * <p><b>SUSPENDED_UNRECORDED 也绝不 emit</b>：该处置对应的事实<b>未落库</b>（PUBLISHED / AMBIGUOUS
+     * 均写不下），若广播 {@code listing.ambiguous} 即让总线承载一条不存在的（未落库）事实，违反 AC-5 /
+     * specs/0016 §0.3「总线只承载已落库事实，永不作 first write」。故本方法只认
+     * {@link PublishDisposition#PUBLISHED} / {@link PublishDisposition#AMBIGUOUS} 两种 disposition。
      */
     private void emit(PublishDecision decision) {
         if (decision.disposition() == PublishDisposition.PUBLISHED) {

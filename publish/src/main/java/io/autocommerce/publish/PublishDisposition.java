@@ -17,6 +17,16 @@ public enum PublishDisposition {
     PUBLISHED,
     /** 超时歧义：已落库 AMBIGUOUS 事实，workflow 挂起等 signal（非终态）。 */
     AMBIGUOUS,
+    /**
+     * <b>外部已生效、本地未落库</b>：{@code add} 已成功返回，但 PUBLISHED 与 AMBIGUOUS 事实<b>都</b>写不下
+     * （状态库整体不可用）——workflow 挂起等 signal（非终态），<b>不授权重铺</b>。
+     *
+     * <p>与 {@link #AMBIGUOUS} 的区别：本处置对应的事实<b>没有落库</b>，因此<b>不广播</b>
+     * {@code listing.ambiguous}——否则等于让总线承载一条不存在的（未落库）事实，违反 AC-5 /
+     * specs/0016 §0.3「总线只承载已落库事实，永不作 first write」。也<b>不得</b>归
+     * {@link #RETRYABLE}（会经 Activity 退避重试 → 重跑 {@code add} → 重复铺货，违反 ADR-0003）。
+     */
+    SUSPENDED_UNRECORDED,
     /** 业务拒绝（Adapter NON_RETRYABLE）：已落库 REJECTED，workflow 以 failed 收尾。 */
     REJECTED,
     /** 可重试类重试耗尽 / 意外未知：已落库 FAILED，workflow 以 failed 收尾。 */

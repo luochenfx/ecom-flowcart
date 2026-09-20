@@ -254,6 +254,30 @@ class PublishWorkflowE2ETest {
         assertThat(adapter.addCalls()).as("全程只 add 一次").hasSize(1);
     }
 
+    @Test
+    void storePersistentlyUnavailable_addOnce_suspendsNotFailed_noAmbiguousEvent() {
+        adapter.script(AddBehavior.SUCCESS);
+        // 注入：put 持续失败 ≥2 次（第 1 次 PUBLISHED、第 2 次 AMBIGUOUS 都写不下）→ SUSPENDED_UNRECORDED
+        startEnvWithStore(new FailingPutPublishStateStore(store, 2));
+
+        PublishWorkflow stub = launcher().start(input());
+        awaitUntil(() -> adapter.addCalls().size() == 1);
+
+        // 落库整停 → 挂起（非终态），绝不重试（旧 RETRYABLE 回退会退避重试 → 重跑 add）
+        assertThat(domainEventsOf(EventTypes.LISTING_AMBIGUOUS))
+                .as("事实未落库 → 绝不广播 listing.ambiguous（AC-5：总线不作 first write）").isEmpty();
+        assertThat(adapter.addCalls()).as("落库失败绝不触发重发（add 恒为 1）").hasSize(1);
+
+        // store 恢复（第 3 次 put 成功）+ 人工确认已生效 → 证明 workflow 未 failed、可恢复
+        stub.confirmPublished("fx-item-1", "https://fixture.example.com/item/fx-item-1");
+        PublishWorkflowResult result = WorkflowStub.fromTyped(stub).getResult(PublishWorkflowResult.class);
+
+        assertThat(result.platformItemId()).isEqualTo("fx-item-1");
+        assertThat(state().status()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(adapter.addCalls()).as("全程只 add 一次").hasSize(1);
+        assertThat(domainEventsOf(EventTypes.LISTING_AMBIGUOUS)).isEmpty();
+    }
+
     // ---------------- reconcile seam：先查后发 / 歧义核实 ----------------
 
     @Test

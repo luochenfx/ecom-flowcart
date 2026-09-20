@@ -48,9 +48,15 @@ import java.util.Optional;
  * 归类——FAILED 会经 {@code AllowDuplicateFailedOnly} 授权同 id 新 run，新 run 的 {@code inspect}
  * 查不到 {@code platform_item_id} → reconcile 无果 → 再次 add，即<b>真的二次铺货</b>，与 ADR-0003
  * 「AMBIGUOUS 绝不自动重发」冲突。故该情形改归 {@link PublishDisposition#AMBIGUOUS} 挂起（非终态、
- * 不授权重铺），见 {@link #recordAddOutcome} / {@link #suspendUnrecordedEffect}。仅当连 AMBIGUOUS
- * 也落不下（状态库整体不可用）时才退回可重试处置且不写任何终态——与上一段残余窗口同族，靠
- * "可重入检查 + reconcile-first"安全网。
+ * 不授权重铺），见 {@link #recordAddOutcome} / {@link #suspendUnrecordedEffect}。
+ *
+ * <p><b>安全网的成立边界（如实登记，不夸口）</b>：{@link #recordAddOutcome} 之后"重入仍先查 +
+ * reconcile-first"只在<b>单次落库失败、store 仍可读</b>时成立（重入时可重入短路或 reconcile 命中，
+ * 不重复 add）。<b>持久写失败（读可用，如磁盘满 / 只读挂载）下该安全网不成立</b>——无 PUBLISHED 行可查、
+ * reconcile 常无果，重入会再次 add。因此本修复<b>不让该路径进入任何可重试 / 可重放分支</b>：连
+ * AMBIGUOUS 事实也写不下时归 {@link PublishDisposition#SUSPENDED_UNRECORDED}（挂起、不写终态、
+ * 不发事件），使 {@code add} 调用次数<b>恒为 1</b>；store 恢复后由 operator signal（{@code confirmPublished}）
+ * 回填 PUBLISHED。绝不退回 {@code RETRYABLE}（activity 退避重试会重跑 add）。
  */
 public final class PublishService {
 
@@ -197,9 +203,13 @@ public final class PublishService {
      *
      * <p>先尽力把 AMBIGUOUS 事实落库（挂起态需被 {@code inspect} / 看板看到，且使 workflow 停在
      * 非终态、不授权重铺）；若连 AMBIGUOUS 也落不下（状态库整体不可用），退回
-     * {@link PublishDisposition#RETRYABLE} 交 Activity RetryPolicy 退避重试——此时<b>不写任何终态</b>
-     * （尤其不写 FAILED）且不发领域事件（bus 只承载已落库事实）。store 恢复后重入仍先走可重入检查 +
-     * reconcile-first 安全网。
+     * {@link PublishDisposition#SUSPENDED_UNRECORDED}——workflow 同样挂起等 signal，但<b>不写任何终态、
+     * 不发领域事件</b>（事实未落库，不得作总线 first write）。
+     *
+     * <p><b>为什么不退回 {@link PublishDisposition#RETRYABLE}</b>：可重试错误会让 Activity 退避重试
+     * （{@code doNotRetry} 不含 RETRYABLE），重试即重跑 {@link #publish}；此刻无 PUBLISHED 行、可重入
+     * 短路失效 → 会<b>再次 {@code add}</b>（持久写失败下最多重复 5 次），违反 ADR-0003 / AC-3。挂起处置
+     * 使 {@code add} 调用次数<b>恒为 1</b>。
      */
     private PublishDecision suspendUnrecordedEffect(String listingId, RuntimeException recordFailure) {
         String reason = "add 已生效但 PUBLISHED 落库失败（" + recordFailure.getClass().getName()
@@ -207,7 +217,11 @@ public final class PublishService {
         try {
             return PublishDecision.ambiguous(recordAmbiguous(listingId, reason));
         } catch (RuntimeException storeUnavailable) {
-            return PublishDecision.retryable(listingId, reason + "；状态库暂不可用，转退避重试");
+            // 状态库整体不可用：连 AMBIGUOUS 事实也写不下。
+            // 绝不 RETRYABLE（activity 退避重试 → 重跑 add → 重复铺货）；绝不 FAILED（授权重铺 → 同样重发）；
+            // 也不返回 AMBIGUOUS（会 emit listing.ambiguous，但本路径事实未落库 → 违反 AC-5）。
+            return PublishDecision.suspendedUnrecorded(listingId, reason
+                    + "；状态库暂不可用（" + storeUnavailable.getClass().getName() + "），已挂起等 signal");
         }
     }
 

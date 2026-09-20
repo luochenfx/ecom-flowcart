@@ -191,18 +191,20 @@ class PublishServiceTest {
     }
 
     @Test
-    void publish_addSucceedsButStoreCompletelyUnavailable_isNotFailedAndDoesNotCommitTerminal() {
-        // 注入：PUBLISHED 与 AMBIGUOUS 两次落库都失败（状态库整体不可用）
-        PublishStateStore failingStore = new FailingPutPublishStateStore(store, 2);
+    void publish_addSucceedsButStorePersistentlyUnavailable_suspendsWithoutRetryOrTerminal() {
+        // 注入：put 持续失败（N=5，模拟磁盘满 / 只读挂载——读可用、写整停）
+        PublishStateStore failingStore = new FailingPutPublishStateStore(store, 5);
         PublishService failingService = new PublishService(failingStore, adapter, CLOCK);
 
         PublishDecision decision = failingService.publish(PublishFixtures.listing());
 
+        // 绝不 RETRYABLE（activity 会退避重试 → 重跑 add → 重复铺货）；绝不 FAILED（授权重铺）。
         assertThat(decision.disposition())
-                .as("连 AMBIGUOUS 都落不下时退回可重试，且绝不写终态 FAILED")
-                .isEqualTo(PublishDisposition.RETRYABLE);
-        assertThat(adapter.addCalls()).hasSize(1);
+                .as("落库整停 → 挂起（不重试 / 不写终态）")
+                .isEqualTo(PublishDisposition.SUSPENDED_UNRECORDED);
+        assertThat(adapter.addCalls()).as("add 已成功，绝不因落库失败而重发").hasSize(1);
         assertThat(store.get(PublishFixtures.LISTING_ID)).as("未落任何终态（尤其不写 FAILED）").isEmpty();
+        assertThat(decision.occurredAt()).as("无已落库事实 → occurredAt 为 null").isNull();
     }
 
     // ---------------- signal 驱动的落库（人工确认 / 拒绝） ----------------

@@ -5,6 +5,8 @@ import io.autocommerce.publish.JsonFilePublishStateStore;
 import io.autocommerce.publish.PublishDecision;
 import io.autocommerce.publish.PublishDisposition;
 import io.autocommerce.publish.PublishService;
+import io.autocommerce.publish.PublishStateStore;
+import io.autocommerce.publish.testsupport.FailingPutPublishStateStore;
 import io.autocommerce.publish.testsupport.FixturePublishPlatformAdapter;
 import io.autocommerce.publish.testsupport.PublishFixtures;
 import io.autocommerce.worker.event.EventPublisher;
@@ -39,14 +41,14 @@ class PublishActivitiesImplTest {
     private FixturePublishPlatformAdapter adapter;
     private JsonFilePublishStateStore store;
     private final List<String> storeAtEmit = new ArrayList<>();
+    private EventPublisher publisher;
     private PublishActivities activities;
 
     @BeforeEach
     void setUp() {
         adapter = new FixturePublishPlatformAdapter();
         store = new JsonFilePublishStateStore(tempDir.resolve("publish"));
-        PublishService service = new PublishService(store, adapter, CLOCK);
-        EventPublisher publisher = new EventPublisher() {
+        publisher = new EventPublisher() {
             @Override
             public void publishFailed(SysWorkflowFailedEvent event) {
                 // 本 slice 不产 lifecycle 失败事件
@@ -59,7 +61,13 @@ class PublishActivitiesImplTest {
                         .orElse("store=ABSENT"));
             }
         };
-        activities = new PublishActivitiesImpl(service, publisher, "PublishWorkflow");
+        activities = new PublishActivitiesImpl(new PublishService(store, adapter, CLOCK), publisher,
+                "PublishWorkflow");
+    }
+
+    private PublishActivities activitiesWithStore(PublishStateStore eventStore) {
+        return new PublishActivitiesImpl(new PublishService(eventStore, adapter, CLOCK), publisher,
+                "PublishWorkflow");
     }
 
     @Test
@@ -98,6 +106,19 @@ class PublishActivitiesImplTest {
         assertThatThrownBy(() -> activities.publish(input()))
                 .isInstanceOf(ApplicationFailure.class);
         assertThat(storeAtEmit).isEmpty();
+    }
+
+    @Test
+    void suspendedUnrecorded_returnsDecisionWithoutEmittingAnyEvent() {
+        // add 成功、但 PUBLISHED / AMBIGUOUS 事实都落不下（store 写整停、读可用）
+        PublishActivities failing = activitiesWithStore(new FailingPutPublishStateStore(store, 5));
+
+        PublishDecision decision = failing.publish(input());
+
+        assertThat(decision.disposition()).isEqualTo(PublishDisposition.SUSPENDED_UNRECORDED);
+        assertThat(storeAtEmit)
+                .as("事实未落库 → 绝不广播（AC-5：总线只承载已落库事实，永不作 first write）")
+                .isEmpty();
     }
 
     private static PublishWorkflowInput input() {

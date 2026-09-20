@@ -43,6 +43,16 @@ public record PublishDecision(
                 null, null, state.updatedAt(), state.reason());
     }
 
+    /**
+     * 外部已生效但本地<b>未落库</b>（PUBLISHED / AMBIGUOUS 事实都写不下）→ workflow 挂起等 signal，
+     * <b>不广播</b>领域事件（无落库事实，不得作总线 first write，AC-5）。
+     * {@code occurredAt} = null（无已落库事实时间）。
+     */
+    public static PublishDecision suspendedUnrecorded(String listingId, String reason) {
+        return new PublishDecision(PublishDisposition.SUSPENDED_UNRECORDED, listingId,
+                null, null, null, reason);
+    }
+
     /** 业务拒绝已落库 REJECTED → workflow failed。 */
     public static PublishDecision rejected(PublishState state) {
         return new PublishDecision(PublishDisposition.REJECTED, state.listingId(),
