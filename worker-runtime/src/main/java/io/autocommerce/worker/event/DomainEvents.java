@@ -27,8 +27,9 @@ import java.util.UUID;
  * {@code producer}（workflow type）、{@code entity_ref}（回读业务库用）、{@code correlation_id}
  * （业务链根 id，此处 = orderId）、{@code payload}（轻量实体引用 + 摘要）。
  *
- * <p><b>幂等锚确定性</b>：{@code id} = UUIDv5 形态、由事实键
- * {@code type | entity_ref.type | entity_ref.id | occurred_at} 的 SHA-256 摘要确定性派生。
+ * <p><b>幂等锚确定性</b>：{@code id} = 由事实键
+ * {@code type | entity_ref.type | entity_ref.id | occurred_at} 的 SHA-256 摘要确定性派生的
+ * UUID（RFC 9562 <b>v8</b>「自定义算法」形态，非 SHA-1 系 v5 语义）。
  * 于是同一业务事实的重复广播（activity 失败重跑 / broker 重投）产出<b>同一</b> id，消费端据此去重；
  * 不同事实（含同 type 不同 {@code entity_ref}）产出不同 id。派生输入全部取自已落库事实，
  * <b>不含</b> {@code Instant.now()} / {@code System.currentTimeMillis()} 等非确定值。
@@ -93,14 +94,14 @@ public final class DomainEvents {
     /**
      * 幂等锚：由事实键 {@code type | entity_ref.type | entity_ref.id | occurred_at} 的 SHA-256 摘要
      * 确定性派生，并对齐 {@code message.schema.json} 的 {@code Envelope.id}（{@code format: uuid}）——
-     * 取摘要前 16 字节按 RFC-4122(v5) 编排为 UUID 字符串。输入全部取自已落库事实
+     * 取摘要前 16 字节按 RFC 9562 <b>v8</b>（自定义算法）编排为 UUID 字符串。输入全部取自已落库事实
      * → 同一事实重放必得同一 id；不同事实必得不同 id。
      */
     private static String deterministicId(String type, EntityRef entityRef, String occurredAt) {
         String factKey = type + '|' + entityRef.type() + '|' + entityRef.id() + '|' + occurredAt;
         byte[] hash = sha256(factKey);
-        hash[6] = (byte) ((hash[6] & 0x0f) | 0x50); // RFC-4122 version 5（name-based）
-        hash[8] = (byte) ((hash[8] & 0x3f) | 0x80); // RFC-4122 variant 10xx
+        hash[6] = (byte) ((hash[6] & 0x0f) | 0x80); // RFC 9562 version 8（自定义算法，非 SHA-1 v5）
+        hash[8] = (byte) ((hash[8] & 0x3f) | 0x80); // RFC 4122 variant 10xx
         ByteBuffer buffer = ByteBuffer.wrap(hash);
         return new UUID(buffer.getLong(), buffer.getLong()).toString();
     }

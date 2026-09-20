@@ -147,12 +147,17 @@ class OrderWorkflowE2ETest {
         // —— 前一次 completed → 重复触发不产生新 run、不重复下单 / 回传（ADR-0003）——
         int notificationsBefore = sales.notifications().size();
         int draftsBefore = source.drafts().size();
+        List<String> eventIdsBeforeRepeat = events.publishedDomainEvents().stream()
+                .map(Envelope::id).toList();
         OrderWorkflowResult repeated = launcher().run(input);
         assertThat(repeated.purchaseOrderIds()).isEqualTo(result.purchaseOrderIds());
         assertThat(sales.notifications()).as("completed 后重复触发不得再次回传发货")
                 .hasSize(notificationsBefore);
         assertThat(source.drafts()).as("completed 后重复触发不得再次下单").hasSize(draftsBefore);
         assertThat(store.listOrders()).hasSize(1);
+        assertThat(events.publishedDomainEvents().stream().map(Envelope::id).toList())
+                .as("completed 后重复触发（activity 重跑）不得新增事件信封——同一事实仍得同一幂等锚")
+                .isEqualTo(eventIdsBeforeRepeat);
     }
 
     private PurchaseFulfillmentService fulfillment() {

@@ -67,8 +67,8 @@ class DomainEventsTest {
                 RmaOutcome.REFUNDED, "2026-09-09T14:00:00Z");
 
         assertThat(envelope.id())
-                .as("Envelope.id 契约 format: uuid —— 确定性派生仍须保持 RFC-4122 uuid 形态")
-                .matches("[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
+                .as("Envelope.id 契约 format: uuid —— 确定性派生仍须保持 RFC 9562 v8 uuid 形态")
+                .matches("[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
         assertThat(envelope.occurredAt()).as("occurred_at = 已落库事实时间").isEqualTo("2026-09-09T14:00:00Z");
 
         ObjectNode document = MAPPER.createObjectNode();

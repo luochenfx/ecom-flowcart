@@ -83,11 +83,22 @@ public final class OrderActivitiesImpl implements OrderActivities {
             RmaOutcome outcome = FulfillmentDeriver.outcomeFor(rma.rmaStatus());
             if (outcome != null) {
                 events.publishDomainEvent(DomainEvents.rmaClosed(workflowType, rma.orderId(),
-                        rma.rmaId(), outcome, rma.timestamps() == null ? null
-                                : rma.timestamps().updatedAt()));
+                        rma.rmaId(), outcome, rmaClosedAt(rma)));
             }
         }
         return rmas;
+    }
+
+    /**
+     * 已落库 RMA 的事实时间（幂等锚派生输入）。缺失即装配 / 状态错误——<b>显式失败</b>，绝不静默传
+     * {@code null}（{@code occurred_at} 是 Envelope 必填，null 会让消息过不了 {@code message.schema.json}）。
+     */
+    private static String rmaClosedAt(OrderRma rma) {
+        if (rma.timestamps() == null || rma.timestamps().updatedAt() == null) {
+            throw new IllegalStateException("rma.closed 缺事实时间（OrderRma.timestamps.updatedAt）: "
+                    + rma.rmaId() + "——不静默产出非法 envelope");
+        }
+        return rma.timestamps().updatedAt();
     }
 
     @Override

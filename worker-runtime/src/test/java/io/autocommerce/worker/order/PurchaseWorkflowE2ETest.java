@@ -30,6 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.List;
 import java.util.ServiceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -121,6 +122,38 @@ class PurchaseWorkflowE2ETest {
         assertThat(repeated.purchaseOrderId()).isEqualTo(result.purchaseOrderId());
         assertThat(sales.notifications()).hasSize(notificationsBefore);
         assertThat(source.drafts()).hasSize(draftsBefore);
+    }
+
+    /**
+     * 幂等锚在<b>真实重放路径</b>下成立：首跑已 SHIPPED 后采购单 {@code updatedAt} 冻结，重复触发
+     * （前一次 completed → 不产生新 run / 不重跑 activity）不得新增事件信封——同一事实仍得同一
+     * {@code envelope.id}，无第二条。
+     */
+    @Test
+    void replayEmitsNoSecondEnvelopeForSameFact() {
+        OrderSyncService sync = new OrderSyncService(OrderFixtures.CHANNEL_ID,
+                sales.getCapability(OrderSyncCapability.class), store, OrderFixtures.rmaSource(), CLOCK);
+        sync.pull();
+
+        PurchaseActivities purchaseActivities = new PurchaseActivitiesImpl(fulfillment(), events,
+                "PurchaseWorkflow");
+        env = TestWorkflowEnvironment.newInstance();
+        env.newWorker(OrderRuntime.TASK_QUEUE).registerWorkflowImplementationTypes(PurchaseWorkflowImpl.class);
+        env.newWorker(OrderRuntime.TASK_QUEUE).registerActivitiesImplementations(purchaseActivities);
+        env.start();
+
+        PurchaseWorkflowInput input = new PurchaseWorkflowInput(OrderFixtures.ORDER_ID,
+                OrderFixtures.SUPPLIER_ID_1);
+        launcher().run(input);
+
+        List<String> firstRunEventIds = events.publishedDomainEvents().stream().map(Envelope::id).toList();
+        assertThat(firstRunEventIds).as("首跑：落库后恰好广播一条 purchase.shipped").hasSize(1);
+
+        launcher().run(input);
+
+        assertThat(events.publishedDomainEvents().stream().map(Envelope::id).toList())
+                .as("重放（activity 重跑）不得新增事件信封——同一事实仍得同一幂等锚，无第二条")
+                .isEqualTo(firstRunEventIds);
     }
 
     private PurchaseFulfillmentService fulfillment() {

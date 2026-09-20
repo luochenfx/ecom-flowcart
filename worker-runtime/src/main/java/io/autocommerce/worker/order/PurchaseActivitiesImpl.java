@@ -57,8 +57,16 @@ public final class PurchaseActivitiesImpl implements PurchaseActivities {
         return shipped;
     }
 
-    /** 已落库采购单的事实时间（幂等锚派生输入；returnShipment 恒写 timestamps）。 */
+    /**
+     * 已落库采购单的事实时间（幂等锚派生输入）。{@code returnShipment} 恒写 {@code timestamps}，缺失即
+     * 装配 / 状态错误——<b>显式失败</b>，绝不静默传 {@code null}（{@code occurred_at} 是 Envelope 必填、
+     * {@code format: date-time}，null 会让消息过不了 {@code message.schema.json}）。
+     */
     private static String fulfilledAt(PurchaseOrder shipped) {
-        return shipped.timestamps() != null ? shipped.timestamps().updatedAt() : null;
+        if (shipped.timestamps() == null || shipped.timestamps().updatedAt() == null) {
+            throw new IllegalStateException("purchase.shipped 缺事实时间（PurchaseOrder.timestamps.updatedAt）: "
+                    + shipped.purchaseOrderId() + "——不静默产出非法 envelope");
+        }
+        return shipped.timestamps().updatedAt();
     }
 }

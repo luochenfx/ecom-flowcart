@@ -56,6 +56,9 @@ public final class RmaSyncService {
      * 事实时间：状态未变（同一事实重放）时保持既有 {@code updatedAt}，使 {@code rma.closed} 的幂等锚
      * （由事实键确定性派生，见 worker-runtime {@code DomainEvents}）跨 activity 重跑稳定；
      * 状态实际变化才推进到 {@code now()}。
+     *
+     * <p><b>口径</b>：本服务「状态未变则不推进 {@code updatedAt}」，以保持 {@code rma.closed} 幂等锚稳定；
+     * 因此 {@code OrderRma.timestamps.updatedAt} 的语义 = <b>最后状态变化时间</b>（而非「每次同步时间」）。
      */
     private Timestamps recordedAt(OrderRma existing, RmaStatus fetched) {
         Timestamps prior = existing.timestamps();
