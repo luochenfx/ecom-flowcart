@@ -119,13 +119,13 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 > 随进展逐步完善；每张实现期 ticket 关闭后同步更新本表与 map #1。
 
 - [x] **设计期收官**（2026-09-09）：9 ADR + 6 Specs + 3 JSON Schema + 架构总览 + CONTEXT 术语
-- **实现期 build slices**（按序开票，一次一张，frontier → [#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）：
+- **实现期 build slices**（按序开票，一次一张，frontier → [#24](https://github.com/luochenfx/ecom-flowcart/issues/24)）：
   - [x] **工程基建基座**（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)，已合入 [PR #25](https://github.com/luochenfx/ecom-flowcart/pull/25)）：多模块 Maven 骨架 + `docker-compose.yml` + CI 编译流水线 + 包名/JDK 定版——`mvn clean test` 空测试报告即绿
   - [x] `core-contracts`（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)，已合入 [PR #30](https://github.com/luochenfx/ecom-flowcart/pull/30)）：标准模型 POJO + 契约接口 + JSON Schema 配套测试——19 tests 绿
   - [x] `catalog`（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)，已合入 [PR #34](https://github.com/luochenfx/ecom-flowcart/pull/34)）：1688 OfferFetch 采集 → SPU/SKU/MediaAsset 落库（首个 Adapter OfferFetch 子集；adapter-1688 12 + catalog 13 tests）
   - [x] `content`（[#20](https://github.com/luochenfx/ecom-flowcart/issues/20)，已合入 [PR #41](https://github.com/luochenfx/ecom-flowcart/pull/41)）：内容链 + 首批 AI Step（翻译回填 / 改写 / 描述 / 价格策略 / 媒体处理）+ `content-{listingId}` Temporal workflow（content 56 + worker-runtime 10 tests）
-  - [ ] `publish`（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）：铺货 workflow（含 reconcile seam）
-  - [ ] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)）：同步（轮询 + webhook 信号）→ 采购单 → 物流
+  - [x] `publish`（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)，已合入 [PR #66](https://github.com/luochenfx/ecom-flowcart/pull/66)）：铺货 workflow——确定性 `listing-{productId}-{channelId}` WorkflowId 幂等 + 四态机（PUBLISHED / AMBIGUOUS 挂起 / REJECTED / FAILED）+ reconcile seam + `listing.published` / `listing.ambiguous` 事件广播（publish 27 + worker-runtime 28 tests）
+  - [x] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)，已合入 [PR #65](https://github.com/luochenfx/ecom-flowcart/pull/65)）：同步（轮询 + webhook 信号）→ 采购单 → 物流（order 27 + worker-runtime 21 tests）
   - [x] （[#23](https://github.com/luochenfx/ecom-flowcart/issues/23) 前置，非 slice）货源侧采购契约补齐（[#35](https://github.com/luochenfx/ecom-flowcart/issues/35)，已合入 [PR #38](https://github.com/luochenfx/ecom-flowcart/pull/38)）：`OfferSku.sourceSpecId` / `PurchaseDraftItem.sourceOfferId` / `PurchaseCapability.cancelPurchase` + `payPurchase`，并在 `specs/0005` 新增 §9.1 1688 侧逐项能力映射表
   - [x] 1688 Adapter 全能力收口 + Adapter 贡献门槛模板（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，已合入 [PR #42](https://github.com/luochenfx/ecom-flowcart/pull/42)）：四段 Purchase（建单 / 取消 / 支付 / 物流）+ OAuth 换票 + 签名网关与限流 + 双向 fixture 门槛（契约前置 [#35](https://github.com/luochenfx/ecom-flowcart/issues/35) 已完成）；review 派生收口链 [#44](https://github.com/luochenfx/ecom-flowcart/issues/44)、[#45](https://github.com/luochenfx/ecom-flowcart/issues/45)、[#46](https://github.com/luochenfx/ecom-flowcart/issues/46) 均已收口（[PR #64](https://github.com/luochenfx/ecom-flowcart/pull/64) / [PR #63](https://github.com/luochenfx/ecom-flowcart/pull/63) / [PR #62](https://github.com/luochenfx/ecom-flowcart/pull/62)）
 - [ ] 开源发布准备（[#24](https://github.com/luochenfx/ecom-flowcart/issues/24)：README 完善 / 示例数据 / 贡献指南）
