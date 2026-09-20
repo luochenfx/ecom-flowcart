@@ -84,12 +84,16 @@ public final class PurchaseFulfillmentService {
 
     // ---------------- 单采购单（采购 workflow 粒度） ----------------
 
-    /** 该订单需要的供应商（拆单结果，确定性顺序）。 */
+    /**
+     * 该订单需要的供应商（拆单结果，确定性顺序）。
+     */
     public List<String> planSupplierIds(String orderId) {
         return planner.plan(load(orderId)).stream().map(p -> p.supplier().supplierId()).toList();
     }
 
-    /** 确保收货地址已解密（下采购单前一次；无采购计划则不解密）。 */
+    /**
+     * 确保收货地址已解密（下采购单前一次；无采购计划则不解密）。
+     */
     public void ensureAddressDecrypted(String orderId) {
         OrderAggregate aggregate = load(orderId);
         if (planner.plan(aggregate).isEmpty()) {
@@ -100,7 +104,9 @@ public final class PurchaseFulfillmentService {
                 .toDocument());
     }
 
-    /** 单供应商下采购单（下单 + 支付）；幂等：该供应商已有采购单直接返回。 */
+    /**
+     * 单供应商下采购单（下单 + 支付）；幂等：该供应商已有采购单直接返回。
+     */
     public PurchaseOrder placePurchase(String orderId, String supplierId) {
         OrderAggregate aggregate = load(orderId);
         Optional<PurchaseOrder> existing = findPurchase(aggregate, supplierId);
@@ -122,7 +128,9 @@ public final class PurchaseFulfillmentService {
         return created;
     }
 
-    /** 单供应商发货 → 回传销售平台，推进采购轴与销售履约轴；幂等：已终态直接返回。 */
+    /**
+     * 单供应商发货 → 回传销售平台，推进采购轴与销售履约轴；幂等：已终态直接返回。
+     */
     public PurchaseOrder returnShipment(String orderId, String supplierId) {
         OrderAggregate aggregate = load(orderId);
         PurchaseOrder purchaseOrder = findPurchase(aggregate, supplierId)
@@ -136,7 +144,7 @@ public final class PurchaseFulfillmentService {
         if (tracking.isEmpty()) {
             return purchaseOrder;
         }
-        Tracking first = tracking.get(0);
+        Tracking first = tracking.getFirst();
         shipment.notifyShipment(new ShipmentNotification(aggregate.order().platformOrderNo(),
                 first.company(), first.trackingNo(), first.url()));
         PurchaseOrder shipped = new PurchaseOrder(purchaseOrder.purchaseOrderId(),
@@ -152,7 +160,9 @@ public final class PurchaseFulfillmentService {
 
     // ---------------- 整单（demo / 单测粒度） ----------------
 
-    /** 拆单并逐供应商下采购单（下单 + 支付）；返回本次落库的采购单。 */
+    /**
+     * 拆单并逐供应商下采购单（下单 + 支付）；返回本次落库的采购单。
+     */
     public List<PurchaseOrder> placePurchases(String orderId) {
         List<String> supplierIds = planSupplierIds(orderId);
         if (supplierIds.isEmpty()) {
@@ -166,7 +176,9 @@ public final class PurchaseFulfillmentService {
         return List.copyOf(created);
     }
 
-    /** 对所有采购单发货回传；返回当前全部采购单。 */
+    /**
+     * 对所有采购单发货回传；返回当前全部采购单。
+     */
     public List<PurchaseOrder> returnShipments(String orderId) {
         List<PurchaseOrder> current = load(orderId).purchaseOrders();
         List<PurchaseOrder> updated = new ArrayList<>();
@@ -253,7 +265,9 @@ public final class PurchaseFulfillmentService {
         return new Timestamps(iso, iso);
     }
 
-    /** 地址解密结果：落库形态（DECRYPTED + 密文）+ 明文（仅下采购单片刻使用）。 */
+    /**
+     * 地址解密结果：落库形态（DECRYPTED + 密文）+ 明文（仅下采购单片刻使用）。
+     */
     private record AddressResolution(ShippingAddress address, DecryptedAddress plaintext) {
     }
 }

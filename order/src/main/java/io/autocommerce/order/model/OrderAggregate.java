@@ -37,7 +37,9 @@ public final class OrderAggregate {
         this.doc = doc;
     }
 
-    /** 从单订单聚合文档构造；orders() 必须恰 1 条。 */
+    /**
+     * 从单订单聚合文档构造；orders() 必须恰 1 条。
+     */
     public static OrderAggregate of(OrderModel doc) {
         if (doc == null || doc.orders() == null || doc.orders().size() != 1) {
             throw new IllegalArgumentException("订单聚合文档 orders() 必须恰 1 条");
@@ -46,10 +48,12 @@ public final class OrderAggregate {
     }
 
     public Order order() {
-        return doc.orders().get(0);
+        return doc.orders().getFirst();
     }
 
-    /** 建单快照（业务事实不可变源）；按 order.snapshotId() 定位，缺失时取首条。 */
+    /**
+     * 建单快照（业务事实不可变源）；按 order.snapshotId() 定位，缺失时取首条。
+     */
     public OrderSnapshot snapshot() {
         if (doc.orderSnapshots() == null || doc.orderSnapshots().isEmpty()) {
             throw new IllegalStateException("订单聚合缺建单快照: " + order().orderId());
@@ -58,7 +62,7 @@ public final class OrderAggregate {
         return doc.orderSnapshots().stream()
                 .filter(s -> s.snapshotId().equals(snapshotId))
                 .findFirst()
-                .orElse(doc.orderSnapshots().get(0));
+                .orElse(doc.orderSnapshots().getFirst());
     }
 
     public List<OrderLine> lines() {
@@ -79,7 +83,9 @@ public final class OrderAggregate {
 
     // ---------------- 派生 ----------------
 
-    /** 推进销售履约轴（canonical，由 workflow 派生后写投影；specs/0003 §4）。 */
+    /**
+     * 推进销售履约轴（canonical，由 workflow 派生后写投影；specs/0003 §4）。
+     */
     public OrderAggregate withFulfillmentStatus(FulfillmentStatus status) {
         Order o = order();
         Order updated = new Order(o.orderId(), o.channelId(), o.platform(), o.platformOrderNo(),
@@ -88,7 +94,9 @@ public final class OrderAggregate {
         return new OrderAggregate(replaceOrder(updated));
     }
 
-    /** 更新收货地址（MASKED → DECRYPTED 的加密负载落库；履约可后补的操作数据）。 */
+    /**
+     * 更新收货地址（MASKED → DECRYPTED 的加密负载落库；履约可后补的操作数据）。
+     */
     public OrderAggregate withShippingAddress(ShippingAddress address) {
         Order o = order();
         Order updated = new Order(o.orderId(), o.channelId(), o.platform(), o.platformOrderNo(),
@@ -97,7 +105,9 @@ public final class OrderAggregate {
         return new OrderAggregate(replaceOrder(updated));
     }
 
-    /** 更新订单时间戳。 */
+    /**
+     * 更新订单时间戳。
+     */
     public OrderAggregate withTimestamps(Timestamps timestamps) {
         Order o = order();
         Order updated = new Order(o.orderId(), o.channelId(), o.platform(), o.platformOrderNo(),
@@ -133,7 +143,9 @@ public final class OrderAggregate {
                 doc.orderSnapshots(), merged, doc.rmas(), doc.channelSyncStates()));
     }
 
-    /** 并入 / 更新 RMA（按 rmaId 覆盖），并重建 Order.rmas 引用。 */
+    /**
+     * 并入 / 更新 RMA（按 rmaId 覆盖），并重建 Order.rmas 引用。
+     */
     public OrderAggregate withRmas(List<OrderRma> additions) {
         List<OrderRma> merged = replaceById(rmas(), nullSafe(additions), OrderRma::rmaId);
         List<RmaRef> refs = merged.stream().map(r -> new RmaRef(r.rmaId())).toList();

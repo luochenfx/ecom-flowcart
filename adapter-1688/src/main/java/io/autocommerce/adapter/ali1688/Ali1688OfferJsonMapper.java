@@ -33,7 +33,9 @@ import java.util.List;
  */
 public final class Ali1688OfferJsonMapper {
 
-    /** 默认金额币种：1688 批发报价为 CNY。 */
+    /**
+     * 默认金额币种：1688 批发报价为 CNY。
+     */
     static final String CURRENCY_CNY = "CNY";
 
     private final ObjectMapper objectMapper;
@@ -42,7 +44,9 @@ public final class Ali1688OfferJsonMapper {
         this.objectMapper = objectMapper;
     }
 
-    /** 将响应体（包装或裸 offer）转为采集面 OfferData。 */
+    /**
+     * 将响应体（包装或裸 offer）转为采集面 OfferData。
+     */
     public OfferData map(String responseBody) {
         JsonNode body = parse(responseBody);
         if (isBusinessError(body)) {
@@ -66,7 +70,9 @@ public final class Ali1688OfferJsonMapper {
         return body.isObject() && body.path("success").isBoolean() && !body.path("success").asBoolean();
     }
 
-    /** 响应包装（success=true）取 result 子树；无包装（fixture/直连）用整棵 body。 */
+    /**
+     * 响应包装（success=true）取 result 子树；无包装（fixture/直连）用整棵 body。
+     */
     private JsonNode unwrap(JsonNode body) {
         JsonNode result = body.path("result");
         return result.isObject() ? result : body;
@@ -152,7 +158,9 @@ public final class Ali1688OfferJsonMapper {
         return assembleFromValueIds(skuInfo, specText);
     }
 
-    /** 按 {@code skuInfo.specs} 维度顺序，把 specText 里各维度的值映射成 {@code values[].valueId} 并连接。 */
+    /**
+     * 按 {@code skuInfo.specs} 维度顺序，把 specText 里各维度的值映射成 {@code values[].valueId} 并连接。
+     */
     private static String assembleFromValueIds(JsonNode skuInfo, String specText) {
         JsonNode specs = skuInfo.path("specs");
         if (!specs.isArray() || specText == null || specText.isBlank()) {
@@ -174,7 +182,9 @@ public final class Ali1688OfferJsonMapper {
         return valueIds.isEmpty() ? null : String.join(";", valueIds);
     }
 
-    /** 从"规格维度名 → 规格值"解析结果里取值；维度名缺失/未命中 → null。 */
+    /**
+     * 从"规格维度名 → 规格值"解析结果里取值；维度名缺失/未命中 → null。
+     */
     private static String valueOf(List<SpecValue> parsed, String dimensionName) {
         if (dimensionName == null) {
             return null;
@@ -186,7 +196,9 @@ public final class Ali1688OfferJsonMapper {
                 .orElse(null);
     }
 
-    /** 在 dimensions 的 values[] 中按 name 找 valueId；未命中 → null。 */
+    /**
+     * 在 dimensions 的 values[] 中按 name 找 valueId；未命中 → null。
+     */
     private static String valueIdOf(JsonNode values, String valueName) {
         if (!values.isArray()) {
             return null;
@@ -225,7 +237,9 @@ public final class Ali1688OfferJsonMapper {
         return specs;
     }
 
-    /** 1688 categoryId/categoryName（可选；字段名 #23 实测校准）。 */
+    /**
+     * 1688 categoryId/categoryName（可选；字段名 #23 实测校准）。
+     */
     private List<CategoryRef> mapCategories(JsonNode offer) {
         String categoryId = Ali1688Json.text(offer, "categoryId");
         if (categoryId == null || categoryId.isBlank()) {
@@ -235,7 +249,9 @@ public final class Ali1688OfferJsonMapper {
         return List.of(new CategoryRef("1688", categoryId, label));
     }
 
-    /** 1688 attributes[]（可选；{name, value?, unit?}，value 为 scalar，字段名 #23 实测校准）。 */
+    /**
+     * 1688 attributes[]（可选；{name, value?, unit?}，value 为 scalar，字段名 #23 实测校准）。
+     */
     private List<Attribute> mapAttributes(JsonNode offer) {
         JsonNode attributes = offer.path("attributes");
         if (!attributes.isArray()) {
@@ -256,7 +272,9 @@ public final class Ali1688OfferJsonMapper {
         return result;
     }
 
-    /** 金额：decimal 数值去除尾零后的可读字符串（45.90 → "45.9"），避免浮点文本噪音。 */
+    /**
+     * 金额：decimal 数值去除尾零后的可读字符串（45.90 → "45.9"），避免浮点文本噪音。
+     */
     private static String formatAmount(JsonNode price) {
         return price.decimalValue().stripTrailingZeros().toPlainString();
     }

@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+
 /**
  * 1688 OfferFetchCapability 实现（#19 子集，ADR-0007 / specs/0005）。
  *

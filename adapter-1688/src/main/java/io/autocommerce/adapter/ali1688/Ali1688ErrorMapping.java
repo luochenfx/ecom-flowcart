@@ -76,7 +76,7 @@ final class Ali1688ErrorMapping {
      * <p><b>判 RETRYABLE 的口径刻意收窄到"平台侧"特征串</b>：业务错误码里也常带
      * {@code LIMIT} / {@code QUANTITY}（如起批量、最大购买量限制），宽泛匹配
      * （只要含 LIMIT 就重试）会把"业务拒绝"误判成"临时故障"而重试到死。宁可漏判成
-     * NON_RETRYABLE（落 Saga 人工处理），也不要把业务拒绝当抖动。
+     * NON_RETRYABLE（落 Saga 人工处理），也不要把业务拒绝当作抖动。
      */
     static AdapterErrorKind classify(String code) {
         if (code == null) {

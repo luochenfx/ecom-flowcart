@@ -38,7 +38,9 @@ import java.util.List;
  */
 public final class Ali1688TradeJsonMapper {
 
-    /** 缺必填字段的 errorCode 与消息骨架（errorCode / 判定统一走 {@link Ali1688ErrorMapping}）。 */
+    /**
+     * 缺必填字段的 errorCode 与消息骨架（errorCode / 判定统一走 {@link Ali1688ErrorMapping}）。
+     */
     private static final String MISSING_FIELD_ERROR_CODE = "missing-required-field";
     private static final String MISSING_FIELD_PREFIX = "1688 请求体缺少必填字段 ";
     private static final String MISSING_FIELD_SUFFIX = "（cargoParamList/addressParam 逐项必填）";
@@ -112,7 +114,9 @@ public final class Ali1688TradeJsonMapper {
         return address.toString();
     }
 
-    /** 免密代扣入参 {@code tradeWithholdPreparePayParam}（官方：{@code {"orderId":"订单号"}}）。 */
+    /**
+     * 免密代扣入参 {@code tradeWithholdPreparePayParam}（官方：{@code {"orderId":"订单号"}}）。
+     */
     public String tradeWithholdPreparePayParam(String platformPurchaseNo) {
         ObjectNode param = mapper.createObjectNode();
         param.put("orderId", Ali1688ErrorMapping.requireNonBlank(platformPurchaseNo,

@@ -22,7 +22,7 @@ public interface SourcingRefResolver {
     /** 解析一条快照行的货源；无映射返回 empty（调用方决定是失败还是跳过）。 */
     Optional<SourcingRef> resolve(LineSnapshot lineSnapshot);
 
-    /** 无货源源的默认实现（订单不进入采购时使用）。 */
+    /** 无货源来源的默认实现（订单不进入采购时使用）。 */
     static SourcingRefResolver none() {
         return lineSnapshot -> Optional.empty();
     }

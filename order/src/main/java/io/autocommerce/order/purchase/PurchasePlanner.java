@@ -66,11 +66,15 @@ public final class PurchasePlanner {
                                 + " snapshotLineRef=" + line.snapshotLineRef()));
     }
 
-    /** 一张采购单的规划（同一供应商）。 */
+    /**
+     * 一张采购单的规划（同一供应商）。
+     */
     public record PurchasePlan(SupplierRef supplier, List<PlannedLine> lines) {
     }
 
-    /** 采购单内的一行（回指销售订单行 + 货源坐标 + 数量/成本价）。 */
+    /**
+     * 采购单内的一行（回指销售订单行 + 货源坐标 + 数量/成本价）。
+     */
     public record PlannedLine(String orderLineId, String sourceOfferId, String sourceSpecId,
                               String sourceSkuId, int quantity, Money unitPrice) {
     }

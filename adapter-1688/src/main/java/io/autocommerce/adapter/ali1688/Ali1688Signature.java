@@ -32,13 +32,17 @@ import java.util.Map;
  */
 final class Ali1688Signature {
 
-    /** 签名中必须排除的参数（自引用）。 */
+    /**
+     * 签名中必须排除的参数（自引用）。
+     */
     static final String SIGNATURE_PARAM = "_aop_signature";
 
     private Ali1688Signature() {
     }
 
-    /** 组装签名因子一：{@code param2/1/{namespace}/{apiName}/{appKey}}（不含前导 {@code /openapi}）。 */
+    /**
+     * 组装签名因子一：{@code param2/1/{namespace}/{apiName}/{appKey}}（不含前导 {@code /openapi}）。
+     */
     static String urlPath(String namespace, String apiName, String appKey) {
         return "param2/1/" + namespace + "/" + apiName + "/" + appKey;
     }
