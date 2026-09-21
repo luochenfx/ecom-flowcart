@@ -12,4 +12,4 @@ CREATE TABLE catalog_product (
 
 ALTER TABLE catalog_product
     ADD CONSTRAINT catalog_product_schema_version
-    CHECK (doc ->> 'schema_version' = '0.1.0');
+    CHECK (doc ? 'schema_version' AND doc -> 'schema_version' = '"0.1.0"'::jsonb);

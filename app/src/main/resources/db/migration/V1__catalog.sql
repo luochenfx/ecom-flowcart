@@ -13,8 +13,20 @@ CREATE TABLE catalog_product (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 const）。
+-- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 required + const）。
 -- 存储层校验门：绕过应用层直接写 SQL 也会被 DB 拒绝。
+--
+-- 为何不能只用 `doc ->> 'schema_version' = '0.1.0'`（spec §8.2 的写法）：SQL 三值逻辑下，
+-- 该表达式会放过三种不合规文档 ——
+--   1) 缺 schema_version 键：`doc ->> 'schema_version'` 返回 NULL，`NULL = '0.1.0'` 求值为 NULL，
+--      CHECK 视 NULL 为通过 → 被接受（而它是 schema 的 required 字段）；
+--   2) 显式 `{"schema_version":null}`：JSON null 经 `->>` 抽出仍是 SQL NULL，同上 → 被接受；
+--   3) 单靠 `doc ? 'schema_version'` 判键存在也不够：键在但值为 null 时 `?` 返回 true，
+--      而 `->>` 仍给 NULL → 仍被接受。
+-- 因此用两项合取：`doc ? 'schema_version'` 保证键存在，`doc -> 'schema_version' = '"0.1.0"'::jsonb`
+-- 直接比 jsonb 值（不做文本抽取），键缺失与值为 null/数字/数组都会落到「不相等」而非 NULL。
+-- 经真实 Postgres 16 实测：仅 {"schema_version":"0.1.0"} 被接受，
+-- 缺键 / null / "9.9.9" / 0.1(数字) / ["0.1.0"](数组) 全部被拒。
 ALTER TABLE catalog_product
     ADD CONSTRAINT catalog_product_schema_version
-    CHECK (doc ->> 'schema_version' = '0.1.0');
+    CHECK (doc ? 'schema_version' AND doc -> 'schema_version' = '"0.1.0"'::jsonb);
