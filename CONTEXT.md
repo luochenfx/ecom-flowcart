@@ -84,6 +84,30 @@ _Avoid_: AI 服务、prompt 工具（Step 是契约化的字段级内容插件�
 生成 Listing 内容的 workflow 域（每 Listing 一 execution：翻译回填 master + 改写稿/价格策略/媒体处理），产物 = Listing 内容就绪（provenance.step=AI|HUMAN）；与铺货 workflow（#11，只读就绪 Listing）分离——重铺 ≠ 重生成。单 Step 失败走降级（degraded_steps）而非阻断，硬依赖 Step 失败才 failed。
 _Avoid_: 清洗链、AI 管线（内容链是 Listing 内容生产的 Temporal workflow 域；"清洗"是 master 侧动作，归属由 Step 读写哪层字段决定）
 
+**采集（ingest）**:
+动作：以 `source_ref` 为输入、经 `OfferFetchCapability` 拉取货源数据并映射为 master 文档落 `CatalogStore` 的过程。**不是**独立 workflow——单次外部调用 + 一次落库，由上游（REST 入口）同步调用 `CatalogIngestService.ingest` 后另起编排链。与「采集层触发形态」（fog）区分：本词只指动作本身。
+_Avoid_: 抓取、爬取、同步商品（采集是契约化的单次取值动作，不含调度/爬虫形态）
+
+**编排链（listing flow）**:
+把「采集产物 → Listing 内容就绪 → 铺货收敛」串起来的父级 workflow（每 `(spuId, channelId)` 一 execution）：activity 内做 Listing 装配（`ListingDraftFactory`），再以 **child workflow** 顺序启动内容链与铺货链。自身不含业务逻辑，只做调度与传参；业务仍在各模块。
+_Avoid_: 主流程、总控、pipeline（编排链是 Temporal 父子 workflow 结构，非业务概念；"总控"暗示中央协调者）
+
+**内容就绪（content ready）**:
+Listing 的一次状态判定：内容链跑完（workflow completed），且 `degraded_steps` 为空——即 `title_overrides` / `description_overrides` / `sku_set.price` / 媒体均已有非占位产物。铺货链的前置条件。**降级完成的 Listing 不算内容就绪**（须人工干预后重生成）。
+_Avoid_: 已完成、就绪（须限定为"内容"轴；Listing 还有铺货轴的状态）
+
+**测试 Adapter（test adapter）**:
+为打通链路而提供的**非生产**销售平台 Adapter：实现 `PublishCapability` 等销售侧能力，走与真实 Adapter 完全相同的 SPI 发现路径（`META-INF/services` + `ServiceLoader`），仅把端点换成可控实现（能返回 `AMBIGUOUS` 以覆盖挂起-裁定路径）。**不是 mock**——它走真实的 `adapter-host` 装配、真实的 `PublishService` 状态机，只替代"外部平台"这一个边界。落点 `adapter-fake` 模块，仅以 test scope 进 `app`（生产 artifact 绝不携带）。
+_Avoid_: fake adapter、stub、mock（本仓测试哲学是 hand-written fake 端点而非 mock 业务逻辑；"测试 Adapter" 特指走真 SPI 路径的测试用平台实现）
+
+**链路坐标（flow identity）**:
+编排链与两条子链的确定性 id 同源于同一 Listing：编排链 `fulfillment-{spuId}-{channelId}`、内容链 `content-{listingId}`、铺货链 `listing-{spuId}-{channelId}`，三处推导必须口径一致（不一致即边界早失败，见 `PublishWorkflowInput` 构造器校验）。采集先于编排链发生，故 `spuId` 由 REST 入口同步采集后回填成 id。
+_Avoid_: 任务 id、job id（链路坐标是 Temporal 确定性 workflowId 的推导规则，非通用任务标识）
+
+**链路查询（flow query）**:
+只读入口 `GET /api/v1/flows/{workflowId}`：回读编排链状态与收敛结果，是"链路是否跑通"的可验证出口（而非只能去 Temporal UI 肉眼看）。**长期挂起是合法状态**——铺货停在 `AMBIGUOUS` 时编排链同步挂起，查询返回 running 属正常，不代表出错。
+_Avoid_: 任务状态、进度接口（链路查询反映的是 Temporal execution 真相，不是自建状态机）
+
 **core（契约核心）**:
 唯一共享层：标准模型 POJO + JSON Schema + 契约接口（Capability / AI Step / envelope type）+ 领域术语。**零 Spring/平台依赖**——一切模块只依赖 core，模块间不依赖实现只经 SPI。依赖规则 `core ← 一切`，三个编译期禁环（插件→宿主 / 业务→平台类 / 读侧→写侧实现）由 ArchUnit 自动拦。
 _Avoid_: 内核、platform、shared lib（core 是"契约 + 纯净模型"层，不是服务、不含运行时装配；Composition Root 在最外层）
