@@ -2,8 +2,14 @@
 <!--
   adapter-host —— SPI 装配（ADR-0007：#9 / ADR-0008：#12）。职责：加载各平台 Adapter（Capability
   接口族，Java SPI 无中央注册表）+ AI Step + LLMProvider 实现。Composition Root 之一（位于最外层）。
-  骨架阶段无业务源码；平台 Adapter 实现为独立模块（#23 1688 Adapter），本模块只做装配。
-  依赖方向：core-contracts（起步；对具体 Adapter/Step 实现的依赖随 #23 落地追加）。
+
+  AdapterHost 只依赖 core-contracts（PlatformAdapterProvider / Capability / AiStepProvider 都在
+  core）——**绝不依赖任何具体 Adapter**，否则编译期就把某平台焊死、破坏插件化（specs/0007 §7.1）。
+  具体 Adapter 的 jar 由 app 的 runtime classpath 提供（app/pom.xml 依赖全部内部模块）。
+
+  测试依赖说明：adapter-1688 / adapter-fake 以 **test scope** 引入，仅为验证"同一 AdapterHost
+  能同时装配两个平台"——test scope 不进生产 artifact，故 main 依赖仍只有 core-contracts。
+  本模块无 HTTP 端点，**不引 WireMock**，也不引 Spring（零 Spring，ADR-0007/0009）。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -22,10 +28,43 @@
   <description>平台 Adapter / AI Step / LLMProvider 的 SPI 装配（Composition Root）</description>
 
   <dependencies>
+    <!-- 生产依赖：**仅** core-contracts（唯一）。 -->
     <dependency>
       <groupId>io.autocommerce</groupId>
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
+    </dependency>
+
+    <!-- 测试依赖：两个真实 SPI provider（走 META-INF/services），验证 AdapterHost 同时装配两平台。
+         **test scope** —— 不进生产 artifact，main 依赖仍只有 core-contracts（specs/0007 §7.1）。 -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-1688</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-fake</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- test：JUnit 5 / AssertJ（Boot BOM 管理）；ArchUnit（根 pom depMgmt 收口）。 -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>
