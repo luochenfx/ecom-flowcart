@@ -64,6 +64,8 @@
 
 **模块间通信铁律**：业务模块间不直接调实现——跨模块协作经 workflow start/signal（Temporal）或领域事件（RabbitMQ，仅广播已落库事实）；读侧只读投影表。总线只流 Domain Event 单层（无 raw/cleaned lane）。
 
+**编排链（listing flow）**：跨模块的**流程衔接**由父级 workflow 承担——`fulfillment-{spuId}-{channelId}` 以 **child workflow** 顺序串联「Listing 装配 → `content-{listingId}` → 内容就绪断言 → `listing-{spuId}-{channelId}`」，落在 `worker-runtime`。它只做调度与传参（零业务逻辑），是"业务模块间不直接调实现"在长链路场景下的承载形态。采集**不**进 workflow（同步调用，见规范 0007 §3）。细节见[规范 0007](./docs/specs/0007-end-to-end-flow-assembly.md)。
+
 ## 4. 依赖方向与禁环
 
 **单一规则：`core` ← 一切模块。** 模块之间只依赖接口（SPI），不依赖实现；`adapter-host` 与 `worker-runtime` 是仅有的两个 Composition Root（知道所有模块的地方），位于最外层。
@@ -99,7 +101,7 @@
 |---|---|---|
 | JSON Schema | [`schemas/`](./schemas) | `product-catalog.schema.json`（#7）/ `order.schema.json`（#8）/ `message.schema.json`（#10） |
 | Java 契约（实现期） | `core-contracts` Maven 模块 | Capability 接口族 + AdapterException（#9）/ AI Step + LLMProvider + ModelResolver seam（#12）/ envelope 类型（#10） |
-| 规范文档 | [`docs/specs/`](./docs/specs) | 0001–0006 |
+| 规范文档 | [`docs/specs/`](./docs/specs) | 0001–0007 |
 
 ### ADR 索引
 
@@ -125,10 +127,14 @@
 | [0004](./docs/specs/0004-message-schema-versioning.md) | envelope 契约 + 版本规则 + 追踪 id + DLQ 两层 |
 | [0005](./docs/specs/0005-adapter-plugin-contract.md) | Adapter 契约（含能力接口签名草图） |
 | [0006](./docs/specs/0006-ai-step-model.md) | AI Step 契约（含签名草图 + 首批 Step 清单） |
+| [0007](./docs/specs/0007-end-to-end-flow-assembly.md) | 端到端链路打通（编排链 + 装配根 + catalog 落 Postgres） |
 
 ## 7. 遗留 fog（Not yet specified，不拍脑袋填）
 
-- 采集层触发形态：手动粘贴商品链接 / 批量 API 拉取 / 爬虫——上游数据源未定；
+- ~~采集层触发形态：手动粘贴商品链接 / 批量 API 拉取 / 爬虫——上游数据源未定~~ → **部分收敛（规范 0007）**：v1 定 REST 单入口（`POST /api/v1/ingest`，上游携带 `source_ref`）；批量 / 爬虫 / 调度形态仍为 fog；
+- **人工重新生成内容**：degraded 但 completed 的 Listing 无法用同一 workflowId 重生成（命中 `ALLOW_DUPLICATE_FAILED_ONLY` 的 "completed → 拒绝"），与规范 0006 §2「人工重新生成内容属合法触发源」冲突。规范 0007 以「降级即不许铺货」把它转为失败信号，但重生成入口本身未定；
+- 编排链的超时机制：规范 0007 明确允许长期挂起（铺货 `AMBIGUOUS` 等裁定），超时/兜底策略未定；
+- 并发语义：同一 SPU 并发装配到多 channel 时 `CatalogStore.put` 整文档覆盖（`listings()` 累积会互相覆盖）——属并发受控范畴，未定；
 - 多租户隔离：开源首版是否需要——取决于商业化意图；
 - 数据血缘审计消费形态：对象级血缘已定（#7），审计如何被看板/查询消费未定；
 - 清洗/翻译链路的语言对与具体清洗规则——锚定数据源平台后细化。

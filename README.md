@@ -4,7 +4,7 @@
 
 覆盖国内（1688 → 淘宝 / 拼多多）与跨境（1688 → 速卖通）两条链路：采集货源商品 → AI 内容生产 → 平台铺货 → 订单回传 1688 采购 → 物流追踪 → 看板 HITL。
 
-> **当前状态：实现期推进中（2026-09-12）**。设计期已收官（9 ADR + 6 Specs + 3 JSON Schema + 架构总览）；工程基建基座（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)）、core-contracts 契约层（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)）、catalog 采集链（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)）与 content 内容链（[#20](https://github.com/luochenfx/ecom-flowcart/issues/20)）已合入 main，frontier 推进至 publish（[#21](https://github.com/luochenfx/ecom-flowcart/issues/21)）。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
+> **当前状态：实现期推进中（2026-09-21）**。设计期已收官（9 ADR + **7** Specs + 3 JSON Schema + 架构总览）；7 个 build slice（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)–[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)）已全部合入 main，各 slice 交付形态为「纯 Java 域服务 + Temporal 编排壳 + 单测」。**当前 frontier = 端到端链路打通**（[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)）：补编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪 → 铺货收敛）、补装配根（`adapter-host` / `api` / `app` Spring 装配）、catalog 文档库落 Postgres。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
 
 ---
 
@@ -71,8 +71,9 @@ flowchart LR
 ```bash
 git clone https://github.com/luochenfx/ecom-flowcart.git
 cd ecom-flowcart
-mvn clean test        # 工程基座（ticket #18）：无业务代码时输出空测试报告即绿
+mvn clean test        # 全 reactor 单测 + in-process Temporal 测试（不需要 docker）
 docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
+mvn clean verify -Pe2e  # 端到端验收（需先 docker compose up -d；默认不进 CI）
 ```
 
 | 服务 | 地址 | 说明 |
@@ -82,6 +83,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 | rabbitmq | localhost:5672 / UI :15672 | Quorum 领域事件总线（管理台默认 flowcart/flowcart） |
 | temporal | localhost:7233 | 编排引擎；可选看板 `docker compose --profile ui up -d` → http://localhost:8081 |
 
+- **两条测试口径**：`mvn clean test` 用 in-process Temporal（快、无依赖、进 CI）；`mvn clean verify -Pe2e` 连真 Temporal server + 真 Postgres 跑完整链路（慢、需 compose，作为手动 / 夜间验收）。口径见 [规范 0007](docs/specs/0007-end-to-end-flow-assembly.md) §9。
 - 本地开发默认凭据 `flowcart/flowcart`；生产覆盖见 `.env.example`（复制为 `.env` 后改，`.env` 不入库）。
 - 首次 `docker compose up -d` 会自动执行两个一次性引导容器（建 Temporal schema + 注册 default namespace，幂等）；重置环境：`docker compose down -v && docker compose up -d`。
 - 无 Docker 环境可跳过 compose——`mvn clean test` 不依赖任何基础设施。
@@ -94,7 +96,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 | [docs/architecture.md](docs/architecture.md) | **设计包总入口**：模块图 / 依赖方向 / 部署视图 / 资产索引 |
 | [CONTEXT.md](CONTEXT.md) | 领域术语（Listing / SPU / Order / Adapter / AI Step / core…） |
 | [docs/adr/](docs/adr/) | 决策记录 ADR-0001 ~ 0009 |
-| [docs/specs/](docs/specs/) | 领域规范 Specs-0001 ~ 0006 |
+| [docs/specs/](docs/specs/) | 领域规范 Specs-0001 ~ 0007 |
 | [docs/ops/backup-restore.md](docs/ops/backup-restore.md) | 备份/恢复 SOP：状态归类 + 双库 pg_dump 语义 + 恢复演练（配套 `docker/backup-postgres.sh` / `restore-postgres.sh`） |
 | [schemas/](schemas/) | 机器可读契约（product-catalog / order / message） |
 | [AGENTS.md](AGENTS.md) | Agent 协作约定（issue tracker / labels / domain docs） |
@@ -119,7 +121,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
 > 随进展逐步完善；每张实现期 ticket 关闭后同步更新本表与 map #1。
 
 - [x] **设计期收官**（2026-09-09）：9 ADR + 6 Specs + 3 JSON Schema + 架构总览 + CONTEXT 术语
-- **实现期 build slices**（按序开票，一次一张，frontier → [#24](https://github.com/luochenfx/ecom-flowcart/issues/24)）：
+- **实现期 build slices**（按序开票，一次一张）：
   - [x] **工程基建基座**（[#18](https://github.com/luochenfx/ecom-flowcart/issues/18)，已合入 [PR #25](https://github.com/luochenfx/ecom-flowcart/pull/25)）：多模块 Maven 骨架 + `docker-compose.yml` + CI 编译流水线 + 包名/JDK 定版——`mvn clean test` 空测试报告即绿
   - [x] `core-contracts`（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)，已合入 [PR #30](https://github.com/luochenfx/ecom-flowcart/pull/30)）：标准模型 POJO + 契约接口 + JSON Schema 配套测试——19 tests 绿
   - [x] `catalog`（[#19](https://github.com/luochenfx/ecom-flowcart/issues/19)，已合入 [PR #34](https://github.com/luochenfx/ecom-flowcart/pull/34)）：1688 OfferFetch 采集 → SPU/SKU/MediaAsset 落库（首个 Adapter OfferFetch 子集；adapter-1688 12 + catalog 13 tests）
@@ -128,6 +130,7 @@ docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
   - [x] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)，已合入 [PR #65](https://github.com/luochenfx/ecom-flowcart/pull/65)）：同步（轮询 + webhook 信号）→ 采购单 → 物流（order 27 + worker-runtime 21 tests）
   - [x] （[#23](https://github.com/luochenfx/ecom-flowcart/issues/23) 前置，非 slice）货源侧采购契约补齐（[#35](https://github.com/luochenfx/ecom-flowcart/issues/35)，已合入 [PR #38](https://github.com/luochenfx/ecom-flowcart/pull/38)）：`OfferSku.sourceSpecId` / `PurchaseDraftItem.sourceOfferId` / `PurchaseCapability.cancelPurchase` + `payPurchase`，并在 `specs/0005` 新增 §9.1 1688 侧逐项能力映射表
   - [x] 1688 Adapter 全能力收口 + Adapter 贡献门槛模板（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，已合入 [PR #42](https://github.com/luochenfx/ecom-flowcart/pull/42)）：四段 Purchase（建单 / 取消 / 支付 / 物流）+ OAuth 换票 + 签名网关与限流 + 双向 fixture 门槛（契约前置 [#35](https://github.com/luochenfx/ecom-flowcart/issues/35) 已完成）；review 派生收口链 [#44](https://github.com/luochenfx/ecom-flowcart/issues/44)、[#45](https://github.com/luochenfx/ecom-flowcart/issues/45)、[#46](https://github.com/luochenfx/ecom-flowcart/issues/46) 均已收口（[PR #64](https://github.com/luochenfx/ecom-flowcart/pull/64) / [PR #63](https://github.com/luochenfx/ecom-flowcart/pull/63) / [PR #62](https://github.com/luochenfx/ecom-flowcart/pull/62)）
+- [ ] **端到端链路打通**（frontier，[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)，2026-09-21 设计定稿）：补编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪断言 → 铺货收敛）+ 补装配根（`adapter-host.AdapterHost` / `api` REST 入口 / `app` Spring 装配）+ catalog 文档库落 Postgres + `adapter-fake` 测试 Adapter + e2e 验收
 - [ ] 开源发布准备（[#24](https://github.com/luochenfx/ecom-flowcart/issues/24)：README 完善 / 示例数据 / 贡献指南）
 
 ## License
