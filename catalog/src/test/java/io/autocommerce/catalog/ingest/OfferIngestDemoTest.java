@@ -71,14 +71,14 @@ class OfferIngestDemoTest {
 
             // 关键落库要素：source_ref 一等字段 / specs[] 结构化 / 来源属性 JSONB /
             // 来源类目挂载 / 对象级 provenance / platform_raw 逃生口
-            assertThat(doc.spus().get(0).sourceRef()).isEqualTo(sourceRef);
-            assertThat(doc.spus().get(0).titles()).containsKey("zh-CN");
-            assertThat(doc.spus().get(0).sourceCategories())
+            assertThat(doc.spus().getFirst().sourceRef()).isEqualTo(sourceRef);
+            assertThat(doc.spus().getFirst().titles()).containsKey("zh-CN");
+            assertThat(doc.spus().getFirst().sourceCategories())
                     .extracting("taxonomy").containsExactly("1688");
-            assertThat(doc.spus().get(0).attributes()).isNotEmpty();
-            assertThat(doc.spus().get(0).platformRaw()).isNotNull();
-            assertThat(doc.skus().get(0).specs()).isNotEmpty();
-            assertThat(doc.spus().get(0).provenance().createdByStep().name()).isEqualTo("CAPTURE");
+            assertThat(doc.spus().getFirst().attributes()).isNotEmpty();
+            assertThat(doc.spus().getFirst().platformRaw()).isNotNull();
+            assertThat(doc.skus().getFirst().specs()).isNotEmpty();
+            assertThat(doc.spus().getFirst().provenance().createdByStep().name()).isEqualTo("CAPTURE");
             assertThat(doc.mediaAssets()).allMatch(m -> m.processingState().name().equals("RAW"));
 
             // 契约门：master 数据通过 product-catalog schema 校验

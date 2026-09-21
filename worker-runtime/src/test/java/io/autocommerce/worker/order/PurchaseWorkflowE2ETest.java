@@ -96,7 +96,7 @@ class PurchaseWorkflowE2ETest {
                         OrderFixtures.SUPPLIER_ID_1));
         assertThat(env.getWorkflowClient().fetchHistory(PurchaseRuntime.workflowIdFor(
                 OrderFixtures.ORDER_ID, OrderFixtures.SUPPLIER_ID_1))
-                .getHistory().getEventsList().get(0)
+                .getHistory().getEventsList().getFirst()
                 .getWorkflowExecutionStartedEventAttributes().getWorkflowType().getName())
                 .isEqualTo("PurchaseWorkflow");
 
@@ -104,13 +104,13 @@ class PurchaseWorkflowE2ETest {
         assertThat(result.purchaseStatus()).isEqualTo(PurchaseStatus.SHIPPED);
         OrderModel doc = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
         assertThat(doc.purchaseOrders()).hasSize(1);
-        assertThat(doc.purchaseOrders().get(0).purchaseStatus()).isEqualTo(PurchaseStatus.SHIPPED);
-        assertThat(doc.orders().get(0).shippingAddress().state()).isEqualTo(ShippingAddressState.DECRYPTED);
+        assertThat(doc.purchaseOrders().getFirst().purchaseStatus()).isEqualTo(PurchaseStatus.SHIPPED);
+        assertThat(doc.orders().getFirst().shippingAddress().state()).isEqualTo(ShippingAddressState.DECRYPTED);
         assertThat(sales.notifications()).hasSize(1);
 
         // —— 事件广播：落库后 purchase.shipped，payload 过 message schema 契约门 ——
         assertThat(events.publishedDomainEvents()).hasSize(1);
-        Envelope event = events.publishedDomainEvents().get(0);
+        Envelope event = events.publishedDomainEvents().getFirst();
         assertThat(event.type()).isEqualTo(EventTypes.PURCHASE_SHIPPED);
         ContractAssertions.assertValid(ContractSchemas.payloadFor(event.type()), event.payload(),
                 "事件 payload: " + event.type());

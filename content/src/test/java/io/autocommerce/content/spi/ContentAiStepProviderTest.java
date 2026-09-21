@@ -33,7 +33,7 @@ class ContentAiStepProviderTest {
         List<AiStepProvider> providers = loadProviders();
 
         assertThat(providers).hasSize(1).first().isInstanceOf(ContentAiStepProvider.class);
-        assertThat(providers.get(0).steps()).extracting(s -> s.descriptor().id())
+        assertThat(providers.getFirst().steps()).extracting(s -> s.descriptor().id())
                 .containsExactlyInAnyOrder(
                         ContentPlan.I18N_BACKFILL, ContentPlan.TITLE_REWRITE, ContentPlan.DESC_GENERATE,
                         ContentPlan.PRICE_STRATEGY, ContentPlan.MEDIA_PROCESS);
@@ -41,7 +41,7 @@ class ContentAiStepProviderTest {
 
     @Test
     void everyStepDeclaresFieldLevelContractAndModelRequirement() {
-        List<StepDescriptor> descriptors = loadProviders().get(0).steps().stream()
+        List<StepDescriptor> descriptors = loadProviders().getFirst().steps().stream()
                 .map(AiStep::descriptor).toList();
 
         assertThat(descriptors).allSatisfy(d -> {

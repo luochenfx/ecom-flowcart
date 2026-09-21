@@ -79,7 +79,7 @@ class PurchaseFulfillmentServiceTest {
     @Test
     void addressDecryptedOnlyAtPurchaseTime() {
         ShippingAddress before = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
-                .orders().get(0).shippingAddress();
+                .orders().getFirst().shippingAddress();
         assertThat(before.state()).isEqualTo(ShippingAddressState.MASKED);
         assertThat(sales.decryptRequests()).isEmpty();
 
@@ -87,7 +87,7 @@ class PurchaseFulfillmentServiceTest {
 
         assertThat(sales.decryptRequests()).as("下采购单前才触发一次解密").hasSize(1);
         ShippingAddress after = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
-                .orders().get(0).shippingAddress();
+                .orders().getFirst().shippingAddress();
         assertThat(after.state()).isEqualTo(ShippingAddressState.DECRYPTED);
         assertThat(after.encryptedPayload()).isNotBlank();
         assertThat(cipher.decrypt(after.encryptedPayload())).isEqualTo(OrderFixtures.decryptedAddress());
@@ -123,11 +123,11 @@ class PurchaseFulfillmentServiceTest {
         assertThat(shipped).allMatch(p -> p.purchaseStatus() == PurchaseStatus.SHIPPED);
         assertThat(shipped).allMatch(p -> !p.tracking().isEmpty());
         assertThat(sales.notifications()).as("每张采购单回传一次发货").hasSize(2);
-        assertThat(sales.notifications().get(0).platformOrderNo()).isEqualTo(OrderFixtures.PLATFORM_ORDER_NO);
+        assertThat(sales.notifications().getFirst().platformOrderNo()).isEqualTo(OrderFixtures.PLATFORM_ORDER_NO);
         assertThat(source.logisticsQueries()).hasSize(2);
 
         OrderModel saved = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
-        assertThat(saved.orders().get(0).fulfillmentStatus()).as("采购全部发货 → 销售侧 SHIPPED")
+        assertThat(saved.orders().getFirst().fulfillmentStatus()).as("采购全部发货 → 销售侧 SHIPPED")
                 .isEqualTo(FulfillmentStatus.SHIPPED);
     }
 
@@ -143,7 +143,7 @@ class PurchaseFulfillmentServiceTest {
         service.returnShipments(OrderFixtures.ORDER_ID);
 
         assertThat(store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
-                .orders().get(0).fulfillmentStatus())
+                .orders().getFirst().fulfillmentStatus())
                 .as("有 open RMA 时发货回传不得把销售轴从 REFUNDING 覆盖回 SHIPPED（单一派生入口）")
                 .isEqualTo(FulfillmentStatus.REFUNDING);
     }

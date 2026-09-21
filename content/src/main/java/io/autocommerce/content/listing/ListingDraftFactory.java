@@ -60,7 +60,7 @@ public final class ListingDraftFactory {
         if (master.spus() == null || master.spus().size() != 1) {
             throw new IllegalArgumentException("Listing 装配需单 SPU 文档（spus() 恰 1 条）");
         }
-        Spu spu = master.spus().get(0);
+        Spu spu = master.spus().getFirst();
         String listingId = "listing-" + spu.spuId() + "-" + channelId;
 
         List<ListingSku> skuSet = new ArrayList<>();
@@ -86,7 +86,7 @@ public final class ListingDraftFactory {
                 new Provenance(ProvenanceStep.LISTING, null, spu.spuId(), now, now));
 
         List<Listing> listings = new ArrayList<>(
-                master.listings() == null ? List.<Listing>of() : master.listings());
+                master.listings() == null ? List.of() : master.listings());
         listings.add(listing);
         return new ProductCatalog(master.schemaVersion(), master.spus(), master.skus(), listings,
                 master.mediaAssets());

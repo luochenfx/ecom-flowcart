@@ -1,6 +1,8 @@
 package io.autocommerce.catalog.ingest;
 
+import io.autocommerce.core.catalog.model.MediaAsset;
 import io.autocommerce.core.catalog.model.ProductCatalog;
+import io.autocommerce.core.catalog.model.Sku;
 import io.autocommerce.core.catalog.model.SourceRef;
 import io.autocommerce.core.contract.AdapterException;
 import io.autocommerce.core.contract.OfferFetchCapability;
@@ -49,11 +51,11 @@ public final class CatalogIngestService {
 
         static IngestResult from(ProductCatalog doc) {
             return new IngestResult(
-                    doc.spus().get(0).spuId(),
-                    doc.skus().stream().map(s -> s.skuId()).toList(),
+                    doc.spus().getFirst().spuId(),
+                    doc.skus().stream().map(Sku::skuId).toList(),
                     doc.mediaAssets() == null
                             ? List.of()
-                            : doc.mediaAssets().stream().map(m -> m.mediaId()).toList());
+                            : doc.mediaAssets().stream().map(MediaAsset::mediaId).toList());
         }
     }
 }

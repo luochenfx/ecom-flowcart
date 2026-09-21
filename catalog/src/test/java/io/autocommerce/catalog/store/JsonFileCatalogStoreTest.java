@@ -53,8 +53,8 @@ class JsonFileCatalogStoreTest {
         JsonFileCatalogStore store = new JsonFileCatalogStore(tmp.resolve("docs"));
         ProductCatalog twoSpus = new ProductCatalog("0.1.0",
                 java.util.List.of(
-                        CatalogTestDocs.singleSpuDocument("spu-1").spus().get(0),
-                        CatalogTestDocs.singleSpuDocument("spu-2").spus().get(0)),
+                        CatalogTestDocs.singleSpuDocument("spu-1").spus().getFirst(),
+                        CatalogTestDocs.singleSpuDocument("spu-2").spus().getFirst()),
                 java.util.List.of(), java.util.List.of(), java.util.List.of());
 
         assertThatThrownBy(() -> store.put(twoSpus))

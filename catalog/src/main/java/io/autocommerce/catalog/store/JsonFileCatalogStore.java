@@ -35,7 +35,7 @@ public final class JsonFileCatalogStore implements CatalogStore {
         this.root = root;
         this.mapper = new ObjectMapper()
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
                 .enable(SerializationFeature.INDENT_OUTPUT);
     }
 
@@ -87,7 +87,7 @@ public final class JsonFileCatalogStore implements CatalogStore {
     }
 
     private static String spuId(ProductCatalog product) {
-        return product.spus().get(0).spuId();
+        return product.spus().getFirst().spuId();
     }
 
     private static void requireSingleSpu(ProductCatalog product) {

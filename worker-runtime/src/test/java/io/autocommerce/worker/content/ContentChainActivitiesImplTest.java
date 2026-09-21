@@ -69,7 +69,7 @@ class ContentChainActivitiesImplTest {
         var store = new JsonFileCatalogStore(tempDir.resolve("catalog"));
         var document = ContentDocs.masterWithListing();
         // 清掉 spu 标题 → i18n.backfill 走缺源 locale 硬失败路径
-        var spu = document.spus().get(0);
+        var spu = document.spus().getFirst();
         var spuWithoutTitle = new io.autocommerce.core.catalog.model.Spu(
                 spu.spuId(), spu.sourceRef(), java.util.Map.of(),
                 spu.descriptions(), spu.images(), spu.skus(),
@@ -110,7 +110,7 @@ class ContentChainActivitiesImplTest {
         assertThat(events.publishedFailedEvents())
                 .as("硬依赖失败 → activity 必发 sys.workflow.failed（A-prime 降级语义）")
                 .hasSize(1);
-        SysWorkflowFailedEvent published = events.publishedFailedEvents().get(0);
+        SysWorkflowFailedEvent published = events.publishedFailedEvents().getFirst();
         assertThat(published.workflowType()).isEqualTo("ContentWorkflow");
         assertThat(published.workflowId()).isEqualTo("content-test-listing-id");
         assertThat(published.runId()).isEqualTo("run-test-id");

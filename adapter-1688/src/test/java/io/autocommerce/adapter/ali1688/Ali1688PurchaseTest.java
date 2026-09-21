@@ -264,7 +264,7 @@ class Ali1688PurchaseTest {
 
         assertThat(trace.platformPurchaseNo()).isEqualTo(CASE_OK);
         assertThat(trace.tracking()).hasSize(1);
-        assertThat(trace.tracking().get(0).trackingNo()).isEqualTo("3832890717253");
+        assertThat(trace.tracking().getFirst().trackingNo()).isEqualTo("3832890717253");
         assertThat(lastForm(LOGISTICS_PATH).get("orderId")).isEqualTo(CASE_OK);
     }
 

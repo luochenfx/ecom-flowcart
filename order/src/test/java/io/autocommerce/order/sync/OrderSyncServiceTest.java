@@ -52,7 +52,7 @@ class OrderSyncServiceTest {
 
         OrderModel saved = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
         assertThat(saved.orderSnapshots()).hasSize(1);
-        assertThat(saved.orders().get(0).provenance().createdByStep().name()).isEqualTo("CAPTURE");
+        assertThat(saved.orders().getFirst().provenance().createdByStep().name()).isEqualTo("CAPTURE");
         assertThat(saved.orderLines()).hasSize(2);
         assertThat(saved.rmas()).hasSize(1);
         // 游标落库（不进 Temporal）且已推进
@@ -86,7 +86,7 @@ class OrderSyncServiceTest {
         service.pull();
 
         OrderSnapshot snapshot = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
-                .orderSnapshots().get(0);
+                .orderSnapshots().getFirst();
         assertThat(snapshot.amounts().paymentAmount().amount())
                 .as("建单快照固化后，平台改价不影响历史订单")
                 .isEqualByComparingTo(new BigDecimal("148.00"));

@@ -56,7 +56,7 @@ class JsonFileOrderStoreTest {
         store.updateOrder(loaded.withFulfillmentStatus(FulfillmentStatus.PURCHASING).toDocument());
 
         OrderModel reloaded = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
-        assertThat(reloaded.orders().get(0).fulfillmentStatus()).isEqualTo(FulfillmentStatus.PURCHASING);
+        assertThat(reloaded.orders().getFirst().fulfillmentStatus()).isEqualTo(FulfillmentStatus.PURCHASING);
         assertThat(reloaded.rmas()).hasSize(1);
         assertThat(store.document().channelSyncStates()).hasSize(1);
         assertThat(store.getChannelSyncState(OrderFixtures.CHANNEL_ID).orElseThrow()
