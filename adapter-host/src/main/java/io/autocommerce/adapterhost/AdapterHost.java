@@ -89,9 +89,15 @@ public final class AdapterHost {
         return Collections.unmodifiableSet(providersByPlatform.keySet());
     }
 
-    /** 指定平台实现的能力接口集合；平台未发现时抛 {@link UnknownPlatformException}。 */
+    /**
+     * 指定平台实现的能力接口集合；平台未发现时抛 {@link UnknownPlatformException}。
+     *
+     * <p>返回 {@link Set#copyOf} 的<b>真不可变副本</b>：SPI 契约（{@link PlatformAdapterProvider#capabilities()}）
+     * 允许实现者返回可变集合，此处拷贝使「不可变」承诺不依赖实现者自律，也不受外部修改污染（与
+     * {@link #platforms()} 口径一致）。
+     */
     public Set<Class<? extends Capability>> capabilities(String platform) {
-        return provider(platform).capabilities();
+        return Set.copyOf(provider(platform).capabilities());
     }
 
     /**
@@ -103,6 +109,8 @@ public final class AdapterHost {
     public <T extends Capability> T capability(String platform, Class<T> type) {
         Objects.requireNonNull(type, "type");
         PlatformAdapterProvider provider = provider(platform);
+        // 预检：把 core 的裸 IllegalArgumentException 翻译成带平台上下文的 UnsupportedCapabilityException，
+        // 使失败信息对调用方可用；委托 provider 之后的校验由 SPI 实现自行负责，二者是「预检 + 委托」的有意双重校验。
         if (!provider.capabilities().contains(type)) {
             throw new UnsupportedCapabilityException(platform, type, provider.capabilities());
         }

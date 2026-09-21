@@ -1,5 +1,7 @@
 package io.autocommerce.adapterhost;
 
+import java.util.Set;
+
 /**
  * 请求了 classpath 上未被发现的平台（specs/0007 §7.1）。
  *
@@ -14,7 +16,7 @@ public final class UnknownPlatformException extends IllegalArgumentException {
 
     private final String platform;
 
-    public UnknownPlatformException(String platform, java.util.Set<String> knownPlatforms) {
+    public UnknownPlatformException(String platform, Set<String> knownPlatforms) {
         super("adapter-host 未发现平台: \"" + platform + "\"（已发现: " + knownPlatforms
                 + "）。请确认对应 Adapter 模块在 classpath 上（runtime/test scope 均可见）。");
         this.platform = platform;
