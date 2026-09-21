@@ -39,6 +39,7 @@
     <module>core-contracts</module>
     <module>catalog</module>
     <module>adapter-1688</module>
+    <module>adapter-fake</module>
     <module>content</module>
     <module>publish</module>
     <module>order</module>

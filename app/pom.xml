@@ -72,6 +72,15 @@
       <version>${project.version}</version>
     </dependency>
 
+    <!-- 测试 Adapter（specs/0007 §9.1）：非生产销售平台 Adapter，走真 SPI 装配 + 真 PublishService
+         状态机，只替代"外部平台"这一边界。**仅 test scope** —— 生产 artifact 绝不携带它。 -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-fake</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- 装配级 starter（工程骨架）：REST 载体 + 健康检查探针 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
