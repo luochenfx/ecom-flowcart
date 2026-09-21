@@ -60,7 +60,7 @@ class OfferCatalogMapperTest {
         ProductCatalog doc = mapper.map(ref, data);
 
         // —— 结构与确定性 id（重采同 offer → 同 id，幂等覆盖） ——
-        Spu spu = doc.spus().get(0);
+        Spu spu = doc.spus().getFirst();
         assertThat(spu.spuId()).isEqualTo("spu-1688-6688990011");
         assertThat(spu.sourceRef()).isEqualTo(ref);
         assertThat(spu.titles()).containsExactlyEntriesOf(
@@ -69,12 +69,12 @@ class OfferCatalogMapperTest {
         assertThat(doc.mediaAssets()).hasSize(2);
         assertThat(spu.images()).extracting("mediaId")
                 .containsExactly("media-1688-6688990011-0", "media-1688-6688990011-1");
-        assertThat(doc.mediaAssets().get(0).role()).isEqualTo(MediaRole.MAIN);
-        assertThat(doc.mediaAssets().get(0).processingState()).isEqualTo(ProcessingState.RAW);
+        assertThat(doc.mediaAssets().getFirst().role()).isEqualTo(MediaRole.MAIN);
+        assertThat(doc.mediaAssets().getFirst().processingState()).isEqualTo(ProcessingState.RAW);
         assertThat(doc.mediaAssets().get(1).role()).isEqualTo(MediaRole.GALLERY);
 
         assertThat(doc.skus()).hasSize(2);
-        Sku first = doc.skus().get(0);
+        Sku first = doc.skus().getFirst();
         assertThat(first.skuId()).isEqualTo("sku-1688-6688990011-523681097354");
         assertThat(first.spuId()).isEqualTo("spu-1688-6688990011");
         assertThat(first.sourceSkuId()).isEqualTo("523681097354");
@@ -90,7 +90,7 @@ class OfferCatalogMapperTest {
         assertThat(spu.sourceCategories())
                 .containsExactly(new CategoryRef("1688", "1601", "数码/影音/音箱"));
         assertThat(spu.attributes()).hasSize(2);
-        assertThat(spu.attributes().get(0).value().asText()).isEqualTo("1200mAh");
+        assertThat(spu.attributes().getFirst().value().asText()).isEqualTo("1200mAh");
         assertThat(spu.attributes().get(1).value().isNumber()).isTrue();
         assertThat(spu.platformRaw()).isSameAs(raw);
 
@@ -100,7 +100,7 @@ class OfferCatalogMapperTest {
         assertThat(spu.provenance().parentRef()).isEqualTo("offer-6688990011");
         assertThat(spu.provenance().createdAt()).isEqualTo(FETCHED_AT);
         assertThat(spu.provenance().updatedAt()).isEqualTo(FETCHED_AT);
-        assertThat(doc.skus().get(0).provenance().parentRef()).isNull();
+        assertThat(doc.skus().getFirst().provenance().parentRef()).isNull();
 
         // —— 契约门：master 文档过 product-catalog schema ——
         ContractAssertions.assertValid(ContractSchemas.productCatalog(),

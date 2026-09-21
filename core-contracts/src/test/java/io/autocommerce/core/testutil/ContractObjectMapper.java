@@ -22,7 +22,7 @@ public final class ContractObjectMapper {
     public static ObjectMapper create() {
         ObjectMapper mapper = new ObjectMapper();
         mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        mapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
         // 契约测试禁止时间戳数字形态；String 时间原样输出
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);

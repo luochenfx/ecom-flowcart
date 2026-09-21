@@ -45,9 +45,9 @@ class CatalogIngestServiceTest {
 
         assertThat(store.docs).containsOnlyKeys("spu-1688-6688990011");
         ProductCatalog doc = store.docs.get("spu-1688-6688990011");
-        assertThat(doc.spus().get(0).sourceRef()).isEqualTo(REF);
-        assertThat(doc.spus().get(0).titles()).containsKey("zh-CN");
-        assertThat(doc.spus().get(0).provenance().createdByStep().name()).isEqualTo("CAPTURE");
+        assertThat(doc.spus().getFirst().sourceRef()).isEqualTo(REF);
+        assertThat(doc.spus().getFirst().titles()).containsKey("zh-CN");
+        assertThat(doc.spus().getFirst().provenance().createdByStep().name()).isEqualTo("CAPTURE");
     }
 
     @Test
@@ -99,7 +99,7 @@ class CatalogIngestServiceTest {
 
         @Override
         public void put(ProductCatalog product) {
-            docs.put(product.spus().get(0).spuId(), product);
+            docs.put(product.spus().getFirst().spuId(), product);
         }
 
         @Override

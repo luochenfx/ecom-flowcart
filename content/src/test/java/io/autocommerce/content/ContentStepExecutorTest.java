@@ -3,7 +3,6 @@ package io.autocommerce.content;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.autocommerce.core.catalog.model.ProvenanceStep;
 import io.autocommerce.core.step.AiStep;
-import io.autocommerce.core.step.FieldRef;
 import io.autocommerce.core.step.ModelRequirement;
 import io.autocommerce.core.step.StepContext;
 import io.autocommerce.core.step.StepDescriptor;
@@ -48,8 +47,8 @@ class ContentStepExecutorTest {
 
         assertThat(run.outcome()).isEqualTo(StepOutcome.DEGRADED);
         assertThat(working.degradedSteps()).hasSize(1);
-        assertThat(working.degradedSteps().get(0).step()).isEqualTo("boom.step");
-        assertThat(working.degradedSteps().get(0).reason()).contains("产物保持上游值");
+        assertThat(working.degradedSteps().getFirst().step()).isEqualTo("boom.step");
+        assertThat(working.degradedSteps().getFirst().reason()).contains("产物保持上游值");
     }
 
     @Test
@@ -65,8 +64,8 @@ class ContentStepExecutorTest {
         // Step「返回 DEGRADED」与「抛异常的非硬依赖」同走执行器这一处登记口（degraded_steps 唯一写口）：
         // 降级留痕不依赖每个 Step 自觉，否则 specs/0006 §5 的留痕会在链上漏记。
         assertThat(working.degradedSteps()).hasSize(1);
-        assertThat(working.degradedSteps().get(0).step()).isEqualTo("degrade.step");
-        assertThat(working.degradedSteps().get(0).reason()).isEqualTo("缺省产物");
+        assertThat(working.degradedSteps().getFirst().step()).isEqualTo("degrade.step");
+        assertThat(working.degradedSteps().getFirst().reason()).isEqualTo("缺省产物");
     }
 
     /**
@@ -146,7 +145,7 @@ class ContentStepExecutorTest {
         ContentWorkingSet working = ContentWorkingSet.of(ContentDocs.masterWithListing(), ContentDocs.listingId());
         working.markListingTouched();
 
-        assertThat(executor.materialize(working).listings().get(0).provenance().updatedAt())
+        assertThat(executor.materialize(working).listings().getFirst().provenance().updatedAt())
                 .isEqualTo("2026-09-10T12:00:00Z");
     }
 
@@ -161,7 +160,7 @@ class ContentStepExecutorTest {
         ContentWorkingSet working = ContentWorkingSet.of(ContentDocs.masterWithListing(), ContentDocs.listingId());
         executor.execute(working, new ContentPlan.PlanStep("degrade.step", false));
 
-        var listing = executor.materialize(working).listings().get(0);
+        var listing = executor.materialize(working).listings().getFirst();
         assertThat(listing.degradedSteps()).hasSize(1);
         assertThat(listing.provenance().updatedByStep())
                 .as("仅降级留痕不触发 provenance 升 AI（降级产物 = 缺省/原文，非 AI 写）")
@@ -172,7 +171,7 @@ class ContentStepExecutorTest {
 
         @Override
         public StepDescriptor descriptor() {
-            return new StepDescriptor("boom.step", List.<FieldRef>of(), List.<FieldRef>of(),
+            return new StepDescriptor("boom.step", List.of(), List.of(),
                     ModelRequirement.RULE, JsonNodeFactory.instance.objectNode());
         }
 
@@ -186,7 +185,7 @@ class ContentStepExecutorTest {
 
         @Override
         public StepDescriptor descriptor() {
-            return new StepDescriptor("degrade.step", List.<FieldRef>of(), List.<FieldRef>of(),
+            return new StepDescriptor("degrade.step", List.of(), List.of(),
                     ModelRequirement.RULE, JsonNodeFactory.instance.objectNode());
         }
 
@@ -201,7 +200,7 @@ class ContentStepExecutorTest {
 
         @Override
         public StepDescriptor descriptor() {
-            return new StepDescriptor("recover.step", List.<FieldRef>of(), List.<FieldRef>of(),
+            return new StepDescriptor("recover.step", List.of(), List.of(),
                     ModelRequirement.RULE, JsonNodeFactory.instance.objectNode());
         }
 

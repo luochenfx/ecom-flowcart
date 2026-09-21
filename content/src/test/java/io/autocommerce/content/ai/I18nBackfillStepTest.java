@@ -38,7 +38,7 @@ class I18nBackfillStepTest {
                 .containsEntry(ContentDocs.SOURCE_LOCALE, ContentDocs.SOURCE_TITLE);
         // 只翻缺的 locale：源 locale 不走 LLM
         assertThat(llm.requests()).hasSize(1);
-        assertThat(llm.requests().get(0).model()).isNull();
+        assertThat(llm.requests().getFirst().model()).isNull();
     }
 
     @Test

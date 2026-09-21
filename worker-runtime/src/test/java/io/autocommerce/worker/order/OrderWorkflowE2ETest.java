@@ -109,8 +109,8 @@ class OrderWorkflowE2ETest {
         assertThat(doc.purchaseOrders()).hasSize(2);
         assertThat(doc.purchaseOrders()).allMatch(p -> p.purchaseStatus() == PurchaseStatus.SHIPPED);
         assertThat(doc.purchaseOrders()).allMatch(p -> !p.tracking().isEmpty());
-        assertThat(doc.orders().get(0).shippingAddress().state()).isEqualTo(ShippingAddressState.DECRYPTED);
-        assertThat(doc.rmas().get(0).rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
+        assertThat(doc.orders().getFirst().shippingAddress().state()).isEqualTo(ShippingAddressState.DECRYPTED);
+        assertThat(doc.rmas().getFirst().rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
         assertThat(sales.notifications()).as("发货回传销售平台（顾客可追踪）").hasSize(2);
 
         // —— 事件广播：均在落库后，payload 过 message schema 契约门 ——
@@ -138,7 +138,7 @@ class OrderWorkflowE2ETest {
         for (String supplierId : List.of(OrderFixtures.SUPPLIER_ID_1, OrderFixtures.SUPPLIER_ID_2)) {
             String childId = PurchaseRuntime.workflowIdFor(OrderFixtures.ORDER_ID, supplierId);
             assertThat(env.getWorkflowClient().fetchHistory(childId)
-                    .getHistory().getEventsList().get(0)
+                    .getHistory().getEventsList().getFirst()
                     .getWorkflowExecutionStartedEventAttributes().getWorkflowType().getName())
                     .as("采购单自有 workflow execution: " + childId)
                     .isEqualTo("PurchaseWorkflow");

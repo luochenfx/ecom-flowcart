@@ -109,8 +109,7 @@ class ContentWorkflowE2ETest {
         stubLlmSuccess();
         seedMasterReadyListing();
 
-        TestWorkflowEnvironment env = newEnvironment();
-        try {
+        try (TestWorkflowEnvironment env = newEnvironment()) {
             ContentWorkflowResult result = launcher(env).run(
                     new ContentWorkflowInput(SPU_ID, LISTING_ID, ContentPlan.standard()));
 
@@ -139,7 +138,7 @@ class ContentWorkflowE2ETest {
             assertThat(listing.titleOverrides()).containsKeys("zh-CN", "en");
             assertThat(listing.descriptionOverrides()).containsKeys("zh-CN", "en");
             // 译文回填 master canonical（一处翻译多处复用）
-            assertThat(doc.spus().get(0).titles()).containsKeys("zh-CN", "en");
+            assertThat(doc.spus().getFirst().titles()).containsKeys("zh-CN", "en");
             // 价格策略：成本价 × 1.80（45.90 → 82.62）
             assertThat(listing.skuSet()).extracting(s -> s.price().amount()).containsExactly("82.62", "82.62");
             // 媒体归档：RAW → DOWNLOADED 且 storage_ref 就位
@@ -163,8 +162,6 @@ class ContentWorkflowE2ETest {
             assertThat(repeated.runs()).extracting(ContentStepRun::stepId).containsExactly(
                     ContentPlan.I18N_BACKFILL, ContentPlan.TITLE_REWRITE, ContentPlan.DESC_GENERATE,
                     ContentPlan.PRICE_STRATEGY, ContentPlan.MEDIA_PROCESS);
-        } finally {
-            env.close();
         }
     }
 
@@ -175,8 +172,7 @@ class ContentWorkflowE2ETest {
         stubLlmServerError();
         seedMasterReadyListing();
 
-        TestWorkflowEnvironment env = newEnvironment();
-        try {
+        try (TestWorkflowEnvironment env = newEnvironment()) {
             ContentWorkflowResult result = launcher(env).run(new ContentWorkflowInput(SPU_ID, LISTING_ID,
                     ContentPlan.standard().without(ContentPlan.I18N_BACKFILL)));
 
@@ -197,8 +193,6 @@ class ContentWorkflowE2ETest {
             // 其余 Step 产物照落：价格与媒体不受影响
             assertThat(listing.skuSet()).extracting(s -> s.price().amount()).containsExactly("82.62", "82.62");
             assertThat(doc.mediaAssets()).allMatch(m -> m.processingState() == ProcessingState.DOWNLOADED);
-        } finally {
-            env.close();
         }
     }
 
@@ -219,8 +213,7 @@ class ContentWorkflowE2ETest {
         seedMasterReadyListing();
         ContentPlan plan = ContentPlan.standard().without(ContentPlan.I18N_BACKFILL);
 
-        TestWorkflowEnvironment env = newEnvironment();
-        try {
+        try (TestWorkflowEnvironment env = newEnvironment()) {
             ContentWorkflowLauncher launcher = launcher(env);
 
             // 第一轮：降级 + 硬依赖失败
@@ -245,8 +238,6 @@ class ContentWorkflowE2ETest {
             Listing listing = listing(store.get(SPU_ID).orElseThrow());
             assertThat(listing.degradedSteps()).isEmpty();
             assertThat(listing.titleOverrides()).containsKey("zh-CN");
-        } finally {
-            env.close();
         }
     }
 
@@ -257,8 +248,7 @@ class ContentWorkflowE2ETest {
         stubLlmServerError();
         seedMasterReadyListing();
 
-        TestWorkflowEnvironment env = newEnvironment();
-        try {
+        try (TestWorkflowEnvironment env = newEnvironment()) {
             Throwable thrown = catchThrowable(() -> launcher(env).run(
                     new ContentWorkflowInput(SPU_ID, LISTING_ID, ContentPlan.standard())));
 
@@ -267,15 +257,13 @@ class ContentWorkflowE2ETest {
 
             // —— AC-6：抛回 Temporal 之前先发 sys.workflow.failed，且坐标是 activity 上下文里的真值 ——
             assertThat(events.publishedFailedEvents()).hasSize(1);
-            SysWorkflowFailedEvent published = events.publishedFailedEvents().get(0);
+            SysWorkflowFailedEvent published = events.publishedFailedEvents().getFirst();
             assertThat(published.failedStep()).isEqualTo(ContentPlan.I18N_BACKFILL);
             assertThat(published.workflowId()).isEqualTo(ContentRuntime.workflowIdFor(LISTING_ID));
             assertThat(published.runId())
                     .as("runId 取自 ActivityExecutionContext，不得再是 workflowId 占位")
                     .isNotBlank()
                     .isNotEqualTo(published.workflowId());
-        } finally {
-            env.close();
         }
     }
 

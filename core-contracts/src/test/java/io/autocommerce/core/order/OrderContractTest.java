@@ -44,7 +44,7 @@ class OrderContractTest {
         assertThat(model.rmas()).hasSize(1);
         assertThat(model.channelSyncStates()).hasSize(1);
 
-        Order order = model.orders().get(0);
+        Order order = model.orders().getFirst();
         assertThat(order.orderId()).isEqualTo("order-taobao-202609090001");
         assertThat(order.channelId()).isEqualTo("taobao-shop-a");
         assertThat(order.platform()).isEqualTo("taobao");
@@ -62,35 +62,35 @@ class OrderContractTest {
         assertThat(order.rmas()).hasSize(1);
         assertThat(order.provenance().createdByStep()).isEqualTo(ProvenanceStep.CAPTURE);
 
-        OrderSnapshot snapshot = model.orderSnapshots().get(0);
+        OrderSnapshot snapshot = model.orderSnapshots().getFirst();
         assertThat(snapshot.snapshotId()).isEqualTo("snap-5001");
         // order Money.amount 为 number → BigDecimal
         assertThat(snapshot.amounts().paymentAmount().amount()).isEqualByComparingTo(new BigDecimal("148.0"));
         assertThat(snapshot.amounts().goodsAmount().currency()).isEqualTo("CNY");
         assertThat(snapshot.lineSnapshots()).hasSize(2);
-        assertThat(snapshot.lineSnapshots().get(0).externalItemRef().itemId()).isEqualTo("tb-item-6688990011");
-        assertThat(snapshot.lineSnapshots().get(0).quantity()).isEqualTo(1);
+        assertThat(snapshot.lineSnapshots().getFirst().externalItemRef().itemId()).isEqualTo("tb-item-6688990011");
+        assertThat(snapshot.lineSnapshots().getFirst().quantity()).isEqualTo(1);
         assertThat(snapshot.lineSnapshots().get(1).myRef()).isNull();
         assertThat(snapshot.shippingAddressMask().province()).isEqualTo("广东省");
         assertThat(snapshot.platformRaw().get("snapshot_url").asText())
                 .isEqualTo("https://trade.taobao.com/detail/TB202609090001");
 
-        PurchaseOrder po = model.purchaseOrders().get(0);
+        PurchaseOrder po = model.purchaseOrders().getFirst();
         assertThat(po.purchaseOrderId()).isEqualTo("purchase-9001");
         assertThat(po.supplierRef().platform()).isEqualTo("1688");
         assertThat(po.supplierRef().supplierId()).isEqualTo("1688-supplier-771");
         assertThat(po.purchaseStatus()).isEqualTo(PurchaseStatus.PAID);
-        assertThat(po.lines().get(0).sourceSkuRef()).isEqualTo("1688-sku-3001");
+        assertThat(po.lines().getFirst().sourceSkuRef()).isEqualTo("1688-sku-3001");
         assertThat(po.amount().amount()).isEqualByComparingTo(new BigDecimal("45.9"));
-        assertThat(po.tracking().get(0).trackingNo()).isEqualTo("SF1234567890");
+        assertThat(po.tracking().getFirst().trackingNo()).isEqualTo("SF1234567890");
 
-        assertThat(model.rmas().get(0).rmaId()).isEqualTo("rma-7001");
-        assertThat(model.rmas().get(0).type()).isEqualTo(RmaType.REFUND);
-        assertThat(model.rmas().get(0).rmaStatus()).isEqualTo(RmaStatus.WAITING_SELLER);
-        assertThat(model.rmas().get(0).amount().amount()).isEqualByComparingTo(new BigDecimal("79.0"));
+        assertThat(model.rmas().getFirst().rmaId()).isEqualTo("rma-7001");
+        assertThat(model.rmas().getFirst().type()).isEqualTo(RmaType.REFUND);
+        assertThat(model.rmas().getFirst().rmaStatus()).isEqualTo(RmaStatus.WAITING_SELLER);
+        assertThat(model.rmas().getFirst().amount().amount()).isEqualByComparingTo(new BigDecimal("79.0"));
 
-        assertThat(model.channelSyncStates().get(0).channelId()).isEqualTo("taobao-shop-a");
-        assertThat(model.channelSyncStates().get(0).cursor().get("page").asInt()).isEqualTo(3);
+        assertThat(model.channelSyncStates().getFirst().channelId()).isEqualTo("taobao-shop-a");
+        assertThat(model.channelSyncStates().getFirst().cursor().get("page").asInt()).isEqualTo(3);
     }
 
     @Test

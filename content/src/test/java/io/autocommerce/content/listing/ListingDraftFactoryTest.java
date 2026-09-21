@@ -26,7 +26,7 @@ class ListingDraftFactoryTest {
                 new CategoryRef("taobao", "5001", "数码/影音"), List.of("zh-CN", "en"));
 
         assertThat(document.listings()).hasSize(1);
-        Listing listing = document.listings().get(0);
+        Listing listing = document.listings().getFirst();
         assertThat(listing.listingId()).isEqualTo("listing-spu-1688-6688990011-taobao-shop-a");
         assertThat(listing.spuId()).isEqualTo(ContentDocs.SPU_ID);
         assertThat(listing.channelId()).isEqualTo(ContentDocs.CHANNEL_ID);

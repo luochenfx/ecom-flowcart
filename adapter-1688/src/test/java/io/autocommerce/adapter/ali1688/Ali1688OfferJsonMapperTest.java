@@ -41,7 +41,7 @@ class Ali1688OfferJsonMapperTest {
 
         // skuInfo.skuMap → OfferSku：sourceSkuId / 组合键原文 / 尽力结构化 specs / 价格
         assertThat(offer.skus()).hasSize(2);
-        OfferData.OfferSku black = offer.skus().get(0);
+        OfferData.OfferSku black = offer.skus().getFirst();
         assertThat(black.sourceSkuId()).isEqualTo("523681097354");
         // 1688 下单键 specId（#23）：取 skuMap 条目自身的 specId，逐 SKU 不同
         assertThat(black.sourceSpecId()).isEqualTo("b266e0726506185beaf205cbae88530d");
@@ -56,7 +56,7 @@ class Ali1688OfferJsonMapperTest {
         assertThat(offer.sourceCategories())
                 .containsExactly(new CategoryRef("1688", "1601", "数码/影音/音箱"));
         assertThat(offer.attributes()).hasSize(3);
-        Attribute battery = offer.attributes().get(0);
+        Attribute battery = offer.attributes().getFirst();
         assertThat(battery.key()).isEqualTo("电池容量");
         assertThat(battery.value().asText()).isEqualTo("1200mAh");
         assertThat(battery.unit()).isEqualTo("mAh");

@@ -50,11 +50,11 @@ class RmaSyncServiceTest {
         List<OrderRma> rmas = service.sync(OrderFixtures.ORDER_ID);
 
         assertThat(rmas).hasSize(1);
-        assertThat(rmas.get(0).rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
-        assertThat(rmas.get(0).platformStatus()).isEqualTo("REFUND_SUCCESS");
+        assertThat(rmas.getFirst().rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
+        assertThat(rmas.getFirst().platformStatus()).isEqualTo("REFUND_SUCCESS");
         OrderModel saved = store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow();
-        assertThat(saved.rmas().get(0).rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
-        assertThat(saved.orders().get(0).fulfillmentStatus())
+        assertThat(saved.rmas().getFirst().rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
+        assertThat(saved.orders().getFirst().fulfillmentStatus())
                 .as("RMA 已收敛 → 不叠加 REFUNDING，回到派生 base")
                 .isEqualTo(FulfillmentStatus.AWAITING_PURCHASE);
     }
@@ -69,6 +69,6 @@ class RmaSyncServiceTest {
         service.sync(OrderFixtures.ORDER_ID);
 
         assertThat(store.getOrderById(OrderFixtures.ORDER_ID).orElseThrow()
-                .orders().get(0).fulfillmentStatus()).isEqualTo(FulfillmentStatus.REFUNDING);
+                .orders().getFirst().fulfillmentStatus()).isEqualTo(FulfillmentStatus.REFUNDING);
     }
 }

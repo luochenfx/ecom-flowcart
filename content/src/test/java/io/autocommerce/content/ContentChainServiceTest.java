@@ -60,11 +60,11 @@ class ContentChainServiceTest {
         // 单稿制：AI 直写 + provenance.updated_by_step=AI（created_by_step 保留）
         assertThat(listing.provenance().updatedByStep()).isEqualTo(ProvenanceStep.AI);
         assertThat(listing.provenance().createdByStep()).isEqualTo(ProvenanceStep.LISTING);
-        assertThat(outcome.document().spus().get(0).provenance().updatedByStep()).isEqualTo(ProvenanceStep.AI);
-        assertThat(outcome.document().mediaAssets().get(0).provenance().updatedByStep())
+        assertThat(outcome.document().spus().getFirst().provenance().updatedByStep()).isEqualTo(ProvenanceStep.AI);
+        assertThat(outcome.document().mediaAssets().getFirst().provenance().updatedByStep())
                 .isEqualTo(ProvenanceStep.AI);
         // 译文回填 canonical（一处翻译多处复用）
-        assertThat(outcome.document().spus().get(0).titles()).containsKey("en");
+        assertThat(outcome.document().spus().getFirst().titles()).containsKey("en");
     }
 
     @Test

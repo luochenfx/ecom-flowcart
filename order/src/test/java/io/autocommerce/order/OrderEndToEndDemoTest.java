@@ -99,12 +99,12 @@ class OrderEndToEndDemoTest {
         assertThat(doc.orderLines()).hasSize(2);
         assertThat(doc.orderLines()).allMatch(l -> l.purchaseLineRefs().size() == 1);
         assertThat(doc.purchaseOrders()).hasSize(2);
-        assertThat(doc.orders().get(0).shippingAddress().state())
+        assertThat(doc.orders().getFirst().shippingAddress().state())
                 .isEqualTo(ShippingAddressState.DECRYPTED);
-        assertThat(cipher.decrypt(doc.orders().get(0).shippingAddress().encryptedPayload()))
+        assertThat(cipher.decrypt(doc.orders().getFirst().shippingAddress().encryptedPayload()))
                 .isEqualTo(OrderFixtures.decryptedAddress());
-        assertThat(doc.rmas().get(0).rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
-        assertThat(doc.orders().get(0).fulfillmentStatus()).isEqualTo(FulfillmentStatus.SHIPPED);
+        assertThat(doc.rmas().getFirst().rmaStatus()).isEqualTo(RmaStatus.REFUNDED);
+        assertThat(doc.orders().getFirst().fulfillmentStatus()).isEqualTo(FulfillmentStatus.SHIPPED);
 
         // —— 两级幂等：重复拉取（等价 webhook 重推）不产生重复单 ——
         OrderWebhookVerifier verifier = new OrderWebhookVerifier("fixture-secret");
