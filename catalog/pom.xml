@@ -35,6 +35,13 @@
       <version>${project.version}</version>
     </dependency>
 
+    <!-- PostgresCatalogStore 实现：JdbcTemplate（非 JPA——doc 整列无关系建模，见类 javadoc）。
+         仅 spring-jdbc（不含 spring-context/tx 容器装配——装配属 app / #74）。 -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
+
     <!-- test -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -69,6 +76,24 @@
     <dependency>
       <groupId>org.wiremock</groupId>
       <artifactId>wiremock</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- PostgresCatalogStore 契约测试：真 Postgres 容器（Testcontainers；版本由 Boot BOM 管理）。
+         disabledWithoutDocker=true → 无 Docker 环境优雅跳过，mvn clean test 不强制依赖 Docker。 -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
