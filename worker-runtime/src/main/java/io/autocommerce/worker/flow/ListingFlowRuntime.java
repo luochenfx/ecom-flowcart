@@ -13,6 +13,12 @@ package io.autocommerce.worker.flow;
  * 三处推导各自独立常量，但必须口径一致——不一致即边界早失败（{@code PublishWorkflowInput} 构造器
  * 机械校验铺货链那一段）。
  *
+ * <p><b>Listing id 口径的单一事实源是</b>
+ * {@link io.autocommerce.worker.publish.PublishRuntime#workflowIdFor(String, String)}
+ * （{@code listing-{spuId}-{channelId}}，同模块既有类）。本类只管编排链自身的
+ * {@code fulfillment-} workflowId；凡需要 Listing id 的编排侧代码（如装配 activity 定位刚落库文档）一律
+ * 复用它，不再自带字面量副本——避免出现第 4 处口径分叉（Review R1 意见 1）。
+ *
  * <p><b>独立 task queue</b>（{@link #TASK_QUEUE}）：编排链与两条子链分队列，互不抢占 worker 槽位。
  */
 public final class ListingFlowRuntime {

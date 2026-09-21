@@ -5,6 +5,7 @@ import io.autocommerce.content.listing.ListingDraftFactory;
 import io.autocommerce.core.catalog.model.DegradedStep;
 import io.autocommerce.core.catalog.model.Listing;
 import io.autocommerce.core.catalog.model.ProductCatalog;
+import io.autocommerce.worker.publish.PublishRuntime;
 import io.temporal.failure.ApplicationFailure;
 
 import java.time.Clock;
@@ -45,8 +46,10 @@ public final class ListingFlowActivitiesImpl implements ListingFlowActivities {
         ProductCatalog drafted = new ListingDraftFactory(clock).draft(
                 master, input.channelId(), input.targetCategory(), input.locales());
         store.put(drafted);
-        // 内容链读回的目标 Listing：从刚落库的文档定位（listingId 由工厂确定性派生）
-        return listing(drafted, listingIdOf(input.spuId(), input.channelId()));
+        // 内容链读回的目标 Listing：从刚落库的文档定位。listingId 口径不在此处自带副本——直接复用
+        // 铺货链的单一事实源 PublishRuntime.workflowIdFor(spuId, channelId)（同模块），
+        // 与 ListingDraftFactory 派生、ContentRuntime/PublishRuntime 坐标同源（CONTEXT.md「链路坐标」）
+        return listing(drafted, PublishRuntime.workflowIdFor(input.spuId(), input.channelId()));
     }
 
     @Override
@@ -77,10 +80,5 @@ public final class ListingFlowActivitiesImpl implements ListingFlowActivities {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
                         "文档内无目标 Listing: " + listingId + "（装配未落库？）"));
-    }
-
-    /** 与内容链 / 铺货链同口径的 Listing id（{@code listing-{spuId}-{channelId}}）。 */
-    private static String listingIdOf(String spuId, String channelId) {
-        return "listing-" + spuId + "-" + channelId;
     }
 }

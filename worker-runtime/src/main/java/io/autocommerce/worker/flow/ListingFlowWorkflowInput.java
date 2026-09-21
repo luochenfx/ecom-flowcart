@@ -14,6 +14,14 @@ import java.util.Objects;
  * 已解析的 {@link ContentPlan} 而非链路类型本身，是为了让 workflow 自洽、确定性——重放只认载荷，不依赖
  * 任何外部映射表；编排层对 chain 的业务语义（国内 / 跨境）的认知止于 launcher 边界，workflow 只认计划。
  *
+ * <p><b>与 specs/0007 §4.2 的口径说明（Review R1 意见 3）</b>：本 record 相较 §4.2 的字面清单收敛为
+ * <b>只携带已解析的 {@link ContentPlan}（不含 {@code chain} 字段）</b>。收敛原因：① Temporal workflow
+ * 实现必须无参构造，无法注入「链类型 → 计划」的映射表；② 把映射放在 {@link ListingFlowWorkflowLauncher}
+ * （编排层客户端侧）既保 workflow 确定性（重放只认载荷里的 plan）又保映射可配置；③ 与既有
+ * {@code ContentWorkflowInput(spuId, listingId, plan)} 先例一致，本链沿用同一载荷形状。请求方声明的
+ * 链路类型（{@code chain}）止于 launcher 边界，链类型判定<b>不读 {@code channelId}</b>（由请求方显式
+ * 声明 {@link ContentChainKind}），workflow 载荷只认计划。
+ *
  * <p>{@code targetCategory}（目标平台叶子类目）与 {@code locales}（提交用语言集）由请求方携带
  * （specs/0002 §3 / specs/0007 §6.2），不在编排层推导。
  *
