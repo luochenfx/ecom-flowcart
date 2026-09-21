@@ -1,10 +1,7 @@
 package io.autocommerce.catalog.store;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import io.autocommerce.core.catalog.model.ProductCatalog;
 
 import java.io.IOException;
@@ -33,10 +30,8 @@ public final class JsonFileCatalogStore implements CatalogStore {
 
     public JsonFileCatalogStore(Path root) {
         this.root = root;
-        this.mapper = new ObjectMapper()
-                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-                .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
-                .enable(SerializationFeature.INDENT_OUTPUT);
+        // 文档序列化配置与 Postgres 实现共用单一事实源（CatalogDocJson），文件实现额外开缩进。
+        this.mapper = CatalogDocJson.newIndentedMapper();
     }
 
     @Override
