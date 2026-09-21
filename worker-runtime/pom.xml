@@ -110,6 +110,23 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- 编排链 e2e：测试销售平台 Adapter（platform=fake-sales，走真 SPI，供 PublishCapability；
+         specs/0007 §9.1）——**test scope**，生产 artifact 绝不携带 -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-fake</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- 编排链 e2e：装配根（ServiceLoader 汇总 Adapter；specs/0007 §7.1）——从 classpath 上的
+         adapter-1688 / adapter-fake 取能力，验证"装配根能否把销售平台 Adapter 装进来"。main 依赖仍只有
+         core-contracts，**test scope** 不进生产 artifact -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-host</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
     <!-- 订单链 demo 复用 order 模块的 fixture 假 adapter（OrderSync / Purchase / Shipment / Rma /
          Address，Java SPI 装配）+ 订单文档 fixture -->
     <dependency>
