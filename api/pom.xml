@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  api —— 对外 REST 入口（ADR-0009：#14）。职责：/api/v1/*（查询/铺货触发/人工 reconcile）；
-  MCP transport seam 预留（首版不做，core 服务接口即现成边界）。调用业务模块公共服务接口
-  （各 slice 落地后按需追加依赖）。骨架阶段无业务源码。依赖方向：core-contracts（起步）。
+  api —— 对外 REST 入口（ADR-0009：#14 / specs/0007 §6）。职责：/api/v1/*（ingest 提交 / 链路查询；
+  后续铺货触发 / 人工 reconcile）。MCP transport seam 预留（首版不做，core 服务接口即现成边界）。
+
+  #73 落地两个端点（specs/0007 §6.1）：
+  - POST /api/v1/ingest     同步采集（catalog.CatalogIngestService）+ 异步启动编排链；返回 202 + 链路坐标
+  - GET  /api/v1/flows/{id} 回读编排链状态与结果
+
+  依赖方向（specs/0007 §6.4）：core-contracts + catalog（采集入口）+ worker-runtime（编排链 launcher /
+  坐标口径）。api 是入口层，**不得** import 任何平台 SDK（禁环②）——由 ApiArchitectureTest 机械拦截。
+  temporal-sdk 供 GET 端点查 execution 状态（WorkflowStub / WorkflowExecutionStatus），version 由根 pom 管。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -25,6 +32,63 @@
       <groupId>io.autocommerce</groupId>
       <artifactId>core-contracts</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <!-- 采集入口：CatalogIngestService（同步）+ IngestResult -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>catalog</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- 编排链启动器（ListingFlowWorkflowLauncher）+ 坐标口径（ListingFlowRuntime / PublishRuntime） -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>worker-runtime</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- GET 端点查 execution 状态：WorkflowClient / WorkflowStub / WorkflowExecutionStatus（版本由根 pom 管） -->
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-sdk</artifactId>
+    </dependency>
+
+    <!-- REST 载体（api role）：Tomcat + Jackson + MVC -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- 请求体校验（@Valid → 400）：hibernate-validator -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- test：@SpringBootTest + WebTestClient（spring-test / spring-boot-test-autoconfigure / JUnit /
+         AssertJ / JsonPath）——**不引 mock 框架当业务替身**（本仓哲学，见 ListingFlowWorkflowE2ETest
+         javadoc）：外部边界（1688 offer fetch）用手写 test fake 实现 OfferFetchCapability。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- in-process Temporal（TestWorkflowEnvironment，纯 Java，无需 docker / CLI） -->
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-testing</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- WebTestClient 在 spring-test 7 需 spring-webflux 在测试 classpath（否则 build() 抛
+         IllegalStateException）。只取 spring-webflux（不引 starter-webflux / reactor-netty）；
+         连接器显式用 JDK HttpClient（JdkClientHttpConnector）。仅 test scope。 -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-webflux</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- 架构护栏（禁环②：api 不 import 平台 SDK；api → worker-runtime / catalog 允许边） -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>
