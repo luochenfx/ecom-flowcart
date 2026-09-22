@@ -72,6 +72,15 @@
       <version>${project.version}</version>
     </dependency>
 
+    <!-- 真货源平台 Adapter（1688 OfferFetch / Purchase / Auth）：生产 runtime classpath 必须携带，
+         否则 AdapterHost 在部署态发现不到任何货源平台 → ingest 无法采集（specs/0007 §7.1
+         「具体 Adapter 的 jar 由 app 的 runtime classpath 提供」）。仅声明依赖，不 import 任何平台类。 -->
+    <dependency>
+      <groupId>io.autocommerce</groupId>
+      <artifactId>adapter-1688</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
     <!-- 测试 Adapter（specs/0007 §9.1）：非生产销售平台 Adapter，走真 SPI 装配 + 真 PublishService
          状态机，只替代"外部平台"这一边界。**仅 test scope** —— 生产 artifact 绝不携带它。 -->
     <dependency>
@@ -89,6 +98,48 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- 基础设施装配（specs/0007 §7.2）：datasource（Postgres）+ Flyway 迁移只在 app 跑
+         （specs/0007 §8.4）。Spring Boot 4 把 JDBC / Flyway 自动配置拆到独立 starter，
+         故显式引入 starter-jdbc / starter-flyway。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
+    <!-- Postgres JDBC 驱动（运行时） -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- Flyway 11+ 把各数据库支持拆出；Postgres 支持需显式引入（specs/0007 §7.2 陷阱）。 -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- test：@SpringBootTest 上下文装配 / role 启停；in-process Temporal（TestWorkflowEnvironment，
+         纯 Java，无需 docker）；app 层 ArchUnit 边界。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-testing</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

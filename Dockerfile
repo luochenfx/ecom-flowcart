@@ -37,6 +37,13 @@ FROM eclipse-temurin:21-jre
 # 非 root 用户（安全最佳实践：容器进程不以 root 运行）
 RUN groupadd --system flowcart && useradd --system --gid flowcart --home-dir /app flowcart
 
+# 数据目录 = spec §7.2 的卷挂载点：/data/media（媒体归档）+ /data/flowcart（JSON 文档库）。
+# 预先创建并 chown 给非 root 运行用户，使「无外部挂载」的默认交付路径也开箱可写
+# （JSON 文档库仅在首次写入时才 createDirectories，非 root 无法在 / 下建 /data → 首次落库即
+# UncheckedIOException）。docker-compose 再以命名卷 app_data 持久化 /data。
+# 层序：与低频变更的 user 创建同段，置于 COPY 之前（最大化缓存命中）。
+RUN mkdir -p /data/media /data/flowcart && chown -R flowcart:flowcart /data
+
 WORKDIR /app
 
 # 按变更频率从低到高逐层 COPY（每层独立 Docker layer，应用代码变更只重建 application 层）

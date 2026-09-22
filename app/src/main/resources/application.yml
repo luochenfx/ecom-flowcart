@@ -1,8 +1,17 @@
 spring:
   application:
     name: flowcart
-  # 基础设施连接（postgres / rabbitmq / temporal）随各 slice 落地后在此启用，
-  # 例如：spring.datasource / spring.flyway / spring.rabbitmq / spring.temporal 等。
+  # 基础设施连接（specs/0007 §7.2）：Postgres（业务库 flowcart）+ Flyway 迁移。
+  # 容器内默认连 compose 的 postgres 服务（宿主 5433 → 容器 5432）；本地 / 覆盖环境经
+  # SPRING_DATASOURCE_URL / SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD 环境变量覆盖。
+  datasource:
+    url: jdbc:postgresql://postgres:5432/flowcart
+    username: flowcart
+    password: flowcart
+  # Flyway 只在 app 跑（specs/0007 §8.4）：脚本源 = classpath:db/migration（V1__catalog.sql）。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
 server:
   port: 8080
@@ -18,7 +27,22 @@ management:
         enabled: true
       show-details: always
 
-# 运行时角色（ADR-0009 §5）：--role=api|worker|scheduler，单机起步合一。
-# 骨架阶段仅作为配置占位，role 实际启停逻辑随 worker-runtime slice 落地。
+# 运行时角色与装配参数（ADR-0009 §5 / specs/0007 §7.2）。
 app:
+  # 逗号串；解析为角色集合（api / worker / scheduler）。默认单机合一。
+  # 容器可经命令行 --app.role=api 覆盖为"只起 REST、不起 worker"。
   role: api,worker,scheduler
+  # 内容链媒体归档根（容器建议指向挂载卷）。
+  media-root: /data/media
+  # 文档库根（v1 OrderStore / PublishStateStore 仍为 JSON 文件实现，specs/0007 §8.5）。
+  data-root: /data/flowcart
+  # 地址明文加密密钥（AES-256，恰 32 字节）。⚠️ 仅为本地开发默认值，生产必须经
+  # APP_ADDRESS_KEY 环境变量覆盖（与 .env.example 的凭据同一纪律）。
+  address-key: "0123456789abcdef0123456789abcdef"
+  temporal:
+    # 连 compose 的自托管真 server（temporal:7233，非 in-process；ADR-0002 / specs/0007 §7.3）。
+    target: temporal:7233
+    namespace: default
+  flow:
+    # 可选：channelId → chain 兜底映射（请求方未声明 chain 时）；v1 请求体携带 chain，此表留空。
+    channels: {}
