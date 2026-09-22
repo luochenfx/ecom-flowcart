@@ -29,11 +29,14 @@ class AppRoleTest {
     }
 
     @Test
-    void wholeStringEqualitySemanticsWouldBeWrong() {
-        // @ConditionalOnProperty(havingValue="worker") 是整串相等：逗号串 ≠ "worker" → 恒不成立（实证）
-        assertThat("api,worker,scheduler").isNotEqualTo("worker");
-        // 正确的 token 判定：
-        assertThat(AppRole.parse("api,worker,scheduler").has("worker")).isTrue();
+    void matchesWorkerOnlyAsExactTokenNotSubstring() {
+        // #74 陷阱 3 的变异守卫：真实现按逗号 token 精确匹配 "worker"。若退化为整串子串匹配
+        // （如 csv.contains("worker")），下列 token 会被误判为含 worker —— 本断言即令该变异变红。
+        assertThat(AppRole.parse("webworker").hasWorker()).isFalse();
+        assertThat(AppRole.parse("preworker,postworker").hasWorker()).isFalse();
+        assertThat(AppRole.parse("api,scheduler").hasWorker()).isFalse();
+        // 对照：整串相等语义（@ConditionalOnProperty 的语义）在逗号串上恒不成立，故必须走 token 化。
+        assertThat(AppRole.parse("api,worker,scheduler").hasWorker()).isTrue();
     }
 
     @Test

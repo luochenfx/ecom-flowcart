@@ -32,6 +32,10 @@ import java.time.Clock;
  *       注册（受条件门控），但**实例化（= 建 worker + 启动）推迟到首次解析**，即
  *       {@link WorkerStartup} 在 {@code ApplicationReadyEvent} 上遍历解析时。这样"启哪些 worker 由
  *       role 决定"这一事实同时落在条件（装配期）与就绪回调（启动期）。</li>
+ *   <li><b>关闭</b>：四个 bean 标 {@link Bean @Bean(destroyMethod = "shutdown")}——容器关闭时由 Spring
+ *       回调 {@link WorkerFactory#shutdown()}，履行各 {@code *WorkerFactory.start(...)} javadoc 里
+ *       "返回的 WorkerFactory 由调用方 shutdown 以优雅退出"的契约（与
+ *       {@code TemporalConfiguration#workflowServiceStubs} 的 {@code destroyMethod} 口径一致）。</li>
  * </ul>
  *
  * <p>workflowId / task queue 口径的单一事实源在各 {@code *Runtime}（见各 start 方法）。
@@ -42,28 +46,28 @@ public class WorkerConfiguration {
 
     /** 编排链 worker（queue {@code flow-task-queue}）。 */
     @Lazy
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     WorkerFactory listingFlowWorkerFactory(WorkflowClient client, CatalogStore store, Clock clock) {
         return ListingFlowWorkerFactory.start(client, store, clock);
     }
 
     /** 内容链 worker（queue {@code content-task-queue}）：AI Step 来源经 AdapterHost（specs/0007 §7.2）。 */
     @Lazy
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     WorkerFactory contentWorkerFactory(WorkflowClient client, CatalogStore store, AdapterHost adapterHost) {
         return ContentWorkerFactory.start(client, store, adapterHost);
     }
 
     /** 铺货链 worker（queue {@code publish-task-queue}）。 */
     @Lazy
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     WorkerFactory publishWorkerFactory(WorkflowClient client, PublishService publishService) {
         return PublishWorkerFactory.start(client, publishService);
     }
 
     /** 订单链 + 采购单链 worker（queue {@code order-task-queue}）。 */
     @Lazy
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     WorkerFactory orderWorkerFactory(WorkflowClient client, OrderStore store,
                                      PurchaseFulfillmentService fulfillment, RmaSyncService rmaSync) {
         return OrderWorkerFactory.start(client, store, fulfillment, rmaSync);
