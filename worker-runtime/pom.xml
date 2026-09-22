@@ -118,14 +118,14 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
-    <!-- 编排链 e2e：装配根（ServiceLoader 汇总 Adapter；specs/0007 §7.1）——从 classpath 上的
-         adapter-1688 / adapter-fake 取能力，验证"装配根能否把销售平台 Adapter 装进来"。main 依赖仍只有
-         core-contracts，**test scope** 不进生产 artifact -->
+    <!-- SPI 装配根（specs/0007 §7.1）：ContentWorkerFactory.start(...) 的生产启动路径据此取
+         AdapterHost.aiSteps()（AI Step 来源统一经装配根，specs/0007 §7.2）——**main scope**。
+         adapter-host 自身只依赖 core-contracts（不 import 任何具体 Adapter），故本依赖**不改变生产
+         artifact 可携带的平台集合**（平台仍由 app 的 runtime classpath 决定，插件化不受影响）。 -->
     <dependency>
       <groupId>io.autocommerce</groupId>
       <artifactId>adapter-host</artifactId>
       <version>${project.version}</version>
-      <scope>test</scope>
     </dependency>
     <!-- 订单链 demo 复用 order 模块的 fixture 假 adapter（OrderSync / Purchase / Shipment / Rma /
          Address，Java SPI 装配）+ 订单文档 fixture -->
