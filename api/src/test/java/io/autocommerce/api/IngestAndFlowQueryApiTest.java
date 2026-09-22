@@ -159,6 +159,84 @@ class IngestAndFlowQueryApiTest {
         assertThat(offerFetch.calls()).isEqualTo(before);
     }
 
+    /**
+     * 重复提交同 {@code (spu_id, channel_id)} → {@code 409 Conflict}（而非幂等 202），且**不产生新链**：
+     * 既有链的 runId 保持不变（真查 Temporal），状态码之外的语义也被钉住。
+     *
+     * <p>语义依据：冲突策略命中既有链时本次**并未启动任何新链**，{@code 202} 会谎报「刚触发一条新链」；
+     * {@code 409} 如实表达冲突，并在错误体带既有链坐标 {@code flow_workflow_id} 供回读。
+     */
+    @Test
+    void ingest_duplicateSubmission_returns409WithExistingCoordinates_andStartsNoNewChain() {
+        offerFetch.script(ScriptedOfferFetch.Mode.SUCCESS);
+        String externalId = "7010";
+        String flowWorkflowId = io.autocommerce.worker.flow.ListingFlowRuntime
+                .workflowIdFor("spu-1688-" + externalId, CHANNEL_ID);
+
+        // 首次提交：采集成功 → 异步启动编排链（未注册 flow worker ⇒ 停在 RUNNING）
+        web.post().uri("/api/v1/ingest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(ingestBody(externalId, "domestic"))
+                .exchange()
+                .expectStatus().isAccepted()
+                .expectBody()
+                .jsonPath("$.flow_workflow_id").isEqualTo(flowWorkflowId);
+
+        assertThat(describeStatus(flowWorkflowId))
+                .as("首次提交后编排链应被启动")
+                .isEqualTo(WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_RUNNING);
+        String runIdAfterFirst = describeRunId(flowWorkflowId);
+
+        // 二次提交同一 (spuId, channelId)：链路已存在 → 409（不是 202，不谎报"起了新链"）
+        web.post().uri("/api/v1/ingest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(ingestBody(externalId, "domestic"))
+                .exchange()
+                .expectStatus().isEqualTo(409)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("flow_already_exists")
+                .jsonPath("$.flow_workflow_id").isEqualTo(flowWorkflowId);
+
+        // 真查 Temporal：既有链未被替换（runId 不变 ⇒ 没有起新 run），状态也没被改
+        assertThat(describeStatus(flowWorkflowId))
+                .as("409 不得改变既有链状态")
+                .isEqualTo(WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_RUNNING);
+        assertThat(describeRunId(flowWorkflowId))
+                .as("409 不得启动新 run：既有链 runId 应保持不变")
+                .isEqualTo(runIdAfterFirst);
+    }
+
+    /**
+     * {@code target_category} 内部必填字段（taxonomy / value）复核与 {@code source_ref} 同口径：缺即
+     * {@code 400}，且**不该触碰采集**（校验先于 ingest）。{@code label} 是展示名缓存、非真源，故不校验。
+     */
+    @Test
+    void ingest_blankTargetCategoryValue_returns400_andNeverTouchesIngest() {
+        int before = offerFetch.calls();
+        String body = """
+                {
+                  "source_ref": {"platform":"1688","external_id":"7011",
+                                 "url":"https://detail.1688.com/offer/7011.html",
+                                 "fetched_at":"2026-09-10T00:00:00Z"},
+                  "channel_id": "%s",
+                  "target_category": {"taxonomy":"taobao","value":"   ","label":"数码/影音"},
+                  "locales": ["zh-CN"],
+                  "chain": "domestic"
+                }
+                """.formatted(CHANNEL_ID);
+
+        web.post().uri("/api/v1/ingest")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("invalid_request");
+
+        assertThat(offerFetch.calls()).as("target_category 校验失败：采集根本不该被调用").isEqualTo(before);
+        assertNoFlowChain("spu-1688-7011");
+    }
+
     // ---------------- GET /api/v1/flows/{workflowId} ----------------
 
     @Test
@@ -273,5 +351,10 @@ class IngestAndFlowQueryApiTest {
 
     private WorkflowExecutionStatus describeStatus(String workflowId) {
         return client.newUntypedWorkflowStub(workflowId).describe().getStatus();
+    }
+
+    /** 既有 execution 的 runId（真查 Temporal）——用于断言「没有起新 run」。 */
+    private String describeRunId(String workflowId) {
+        return client.newUntypedWorkflowStub(workflowId).describe().getExecution().getRunId();
     }
 }

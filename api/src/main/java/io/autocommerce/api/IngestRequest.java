@@ -21,10 +21,14 @@ import java.util.List;
  *   <li>{@code chain} —— 链路类型（国内 / 跨境，**请求方声明**，specs/0007 §4.3）；</li>
  * </ul>
  *
- * <p>顶层必填由 Bean Validation 强制（缺必填 / 枚举非法 → 400）。{@code source_ref} 的**内部必填字段**
- * （platform / external_id / fetched_at）在 core 记录上无校验注解（core 不可改），故由
+ * <p>顶层必填由 Bean Validation 强制（缺必填 / 枚举非法 → 400）。{@code source_ref} 与
+ * {@code target_category} 的**内部必填字段**在 core 记录上无校验注解（core 不可改），故由
  * {@link FlowController} 显式复核并同样收口为 400——避免 mapping 期 {@link IllegalArgumentException}
- * 冒泡成 500。
+ * 冒泡成 500。两者**同口径**，只复核身份字段：
+ * <ul>
+ *   <li>{@code source_ref}：platform / external_id / fetched_at（{@code url} 非身份，不校验）；</li>
+ *   <li>{@code target_category}：taxonomy / value（{@code label} 是展示名缓存、非真源，不校验）。</li>
+ * </ul>
  */
 public record IngestRequest(
         @NotNull SourceRef sourceRef,

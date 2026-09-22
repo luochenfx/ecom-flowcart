@@ -68,14 +68,30 @@ public class FlowQueryService {
         }
     }
 
-    /** 失败摘要：取执行结果的失败信息（失败路径 {@code getResult} 立即抛，不阻塞）。 */
+    /**
+     * 失败摘要的稳定分类前缀。归一化文案 = 固定前缀 + 顶层异常类型名，**不原样透传底层异常
+     * {@code e.getMessage()}**（其长度不可控、且可能泄漏内部实现细节）。
+     */
+    private static final String FAILURE_REASON_PREFIX = "workflow_failed:";
+
+    /**
+     * 失败摘要：归一化为**稳定、有限**的文案——固定分类前缀 {@code workflow_failed:} 拼接顶层异常
+     * 的简单类名（如 {@code workflow_failed:WorkflowFailedException}）。两部分都有限：前缀为常量，类名是
+     * 编译期确定的 Java 标识符。
+     *
+     * <p>刻意不返回底层 {@code e.getMessage()}：原先的直接透传既有「长度不可控」问题，也可能泄漏内部
+     * 细节。取 {@link WorkflowException} 的失败信息（失败路径 {@code getResult} 立即抛，不阻塞）；成功
+     * 返回时（不该发生的 {@code getResult} 不抛）回落为 {@code null}。
+     *
+     * <p>{@code FAILED} 恒有非空 {@code reason}、{@code RUNNING} 的 {@code reason} 恒为 {@code null}，
+     * 两者据此仍可区分（AC-8 语义不受影响）。
+     */
     private static String failureReason(WorkflowStub stub) {
         try {
             stub.getResult(ListingFlowWorkflowResult.class);
             return null;
         } catch (WorkflowException e) {
-            String message = e.getMessage();
-            return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
+            return FAILURE_REASON_PREFIX + e.getClass().getSimpleName();
         }
     }
 

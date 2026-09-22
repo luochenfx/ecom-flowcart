@@ -20,6 +20,9 @@ import java.util.List;
  * {@code degraded_steps} 仅在 {@code COMPLETED} 时非空；{@code reason} 仅在 {@code FAILED} 时承载失败
  * 摘要，其余为 {@code null}。注意 {@code ListingFlowWorkflowResult.reason} 在 v1 恒为 null（其 javadoc：
  * API 层不应据其做非空判断），本响应的 {@code reason} 与之无关，专指**执行失败**的摘要。
+ *
+ * <p>{@code reason} 是**归一化**后的稳定文案（固定分类前缀 + 顶层异常类型名，见
+ * {@code FlowQueryService#failureReason}），**不原样透传**底层异常 message——避免泄漏内部细节 / 长度失控。
  */
 public record FlowQueryResponse(
         String workflowId,

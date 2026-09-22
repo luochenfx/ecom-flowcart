@@ -2,6 +2,7 @@ package io.autocommerce.api;
 
 import io.autocommerce.catalog.ingest.CatalogIngestService;
 import io.autocommerce.catalog.ingest.CatalogIngestService.IngestResult;
+import io.autocommerce.core.catalog.model.CategoryRef;
 import io.autocommerce.core.catalog.model.SourceRef;
 import io.autocommerce.worker.flow.ListingFlowRuntime;
 import io.autocommerce.worker.flow.ListingFlowWorkflowLauncher;
@@ -25,7 +26,9 @@ import java.util.Objects;
  *   <li>{@code POST /api/v1/ingest} —— <b>同步</b>采集（{@link CatalogIngestService}）→ <b>异步</b>
  *       启动编排链（{@link ListingFlowWorkflowLauncher#start}）→ 返回 {@code 202} + 链路坐标。
  *       采集失败（{@code AdapterException}）经 {@link ApiExceptionHandler} 映射为 {@code 503} / {@code 422}，
- *       且<b>绝不启动编排链</b>——避免产生一条注定在第一步装配就失败的 zombie 链（specs/0007 §6.3）；</li>
+ *       且<b>绝不启动编排链</b>——避免产生一条注定在第一步装配就失败的 zombie 链（specs/0007 §6.3）；
+ *       重复提交同 {@code (spu_id, channel_id)}（编排链已存在）由 {@link ApiExceptionHandler} 映射为
+ *       {@code 409}，同样<b>不产生新链</b>；</li>
  *   <li>{@code GET /api/v1/flows/{workflowId}} —— 回读编排链状态与结果（{@link FlowQueryService}）。</li>
  * </ul>
  *
@@ -52,15 +55,17 @@ public class FlowController {
     @PostMapping("/ingest")
     public ResponseEntity<IngestResponse> ingest(@Valid @RequestBody IngestRequest request) {
         SourceRef sourceRef = requireSourceRef(request.sourceRef());
+        CategoryRef targetCategory = requireTargetCategory(request.targetCategory());
 
         // 1) 同步采集（REST 线程占用一次 HTTP 调用量级；失败即抛 AdapterException，不落库）
         IngestResult ingested = ingestService.ingest(sourceRef);
 
         // 2) 采集成功后才异步启动编排链（WorkflowClient.start 非阻塞，不等链路跑完）
+        //    重复提交（链路已存在）时 start 抛 WorkflowExecutionAlreadyStarted → ApiExceptionHandler 收口 409
         flowLauncher.start(
                 ingested.spuId(),
                 request.channelId(),
-                request.targetCategory(),
+                targetCategory,
                 List.copyOf(request.locales()),
                 request.chain().toContentChainKind());
 
@@ -79,11 +84,30 @@ public class FlowController {
     /**
      * {@code source_ref} 内部必填字段复核（core 记录无校验注解，specs/0007 §6.3「缺必填 → 400」）：
      * 任缺一即 400，避免 mapping 期 {@link IllegalArgumentException} 冒泡成 500。
+     *
+     * <p>只复核**身份字段**（platform / external_id / fetched_at）；{@code url} 不校验（非身份，可空）。
      */
     private static SourceRef requireSourceRef(SourceRef ref) {
         if (ref == null || isBlank(ref.platform()) || isBlank(ref.externalId()) || isBlank(ref.fetchedAt())) {
             throw new InvalidRequestException(
                     "source_ref 需含非空 platform / external_id / fetched_at");
+        }
+        return ref;
+    }
+
+    /**
+     * {@code target_category} 内部必填字段复核，与 {@link #requireSourceRef} **同口径**（specs/0007 §6.3
+     * 「缺必填 → 400」）：缺 {@code taxonomy} / {@code value} 即 400，避免 mapping / 启动期
+     * {@link IllegalArgumentException} 冒泡成 500。
+     *
+     * <p>刻意**不校验** {@code label}：core {@link CategoryRef#label()} 是展示名缓存、**非真源**
+     * （见其 javadoc）——与 {@code source_ref} 不校验 {@code url} 同理，只复核身份字段。此取舍已明确记录，
+     * 与 {@code source_ref} 的处理口径对称。
+     */
+    private static CategoryRef requireTargetCategory(CategoryRef ref) {
+        if (ref == null || isBlank(ref.taxonomy()) || isBlank(ref.value())) {
+            throw new InvalidRequestException(
+                    "target_category 需含非空 taxonomy / value（label 为展示名缓存，可空）");
         }
         return ref;
     }
