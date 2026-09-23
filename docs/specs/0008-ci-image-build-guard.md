@@ -290,7 +290,7 @@ jobs:
 - [ ] **Build 首验 ①（路径闸门合并校验）**：实测 `changes` 闸门叠加后，`image-guard` **仅白名单路径变更时触发**，且既有 job 覆盖**不变**。
 - [ ] **Build 首验 ②（runner 上 BuildKit 生效核验）**：以首次 run 的 `Set up job` 日志确认 `docker compose build app` 走 BuildKit（cache mount 生效），并核 `image-guard` 总耗时落于 E23 基线（1m35s–4m51s）可接受增量内。
 - [ ] **Build 首验 ③（v2 / #92 新增：腐化构造下断言必红、合法镜像必绿）**：以 `Dockerfile:48` 去掉 `chown -R` 的 `-R`（或等价构造：`/data` 属 `flowcart` 而 `/data/media`、`/data/flowcart` 属 `root:root`）构造腐化镜像，实测**新断言必红**（且失败信息含路径）；在**合法镜像**上实测**三路径全绿**（无假红）。本项即 v2 修订的**可判定性自证**。
-- [ ] **Build 首验 ④（v2 / #92 新增：白名单增行后的触发语义实测复算）**：实测「只改 `.github/workflows/ci.yml`」的 PR **能**触发 `image-guard`（即守门自证缺口已闭合）；同时复算 workflow 级 `paths-ignore` 与 job 级白名单叠加语义未改变既有 `Build & Test (JDK 21)` 覆盖（沿用 §8「须实测，非推理」纪律）。
+- [x] **Build 首验 ④（v2 / #92 新增：白名单增行后的触发语义实测复算）**：实测「只改 `.github/workflows/ci.yml`」的 PR **能**触发 `image-guard`（即守门自证缺口已闭合）；同时复算 workflow 级 `paths-ignore` 与 job 级白名单叠加语义未改变既有 `Build & Test (JDK 21)` 覆盖（沿用 §8「须实测，非推理」纪律）。**（#94 / PR #97 实测成立，run `35913855857`：`Image Build Guard` = success 2m15s、paths-filter 单独命中 `.github/workflows/ci.yml`、`Build & Test (JDK 21)` 同次 run 仍实跑 success ⇒ 详见 §8.1 实测结果块）**
 - [ ] 既有 `mvn clean test` 仍**全绿**（本改动不污染默认测试路径）。
 - [ ] e2e **仍不进默认 CI**（#75 红线未被触碰；`image-guard` 不启动任何服务容器）。
 
@@ -299,6 +299,71 @@ jobs:
 Build 票落地时必须先做、且结果回填本规范的三项（对应 §7 的 Build 首验 ①–④）：
 
 1. **与既有 `paths-ignore` 的合并校验**——`changes` 闸门叠加后，确认 `image-guard` 仅在白名单路径变更时触发，且既有 `Build & Test (JDK 21)` 覆盖**无变化**（黑名单与 job 级白名单的交互语义须实测，非推理）。**（v2 / #92 扩项，对应 §7 首验 ④）** 同一次实测中须一并确认：**只改 `.github/workflows/ci.yml` 的 PR 能触发 `image-guard`**——这是 Q5(b) 增行的唯一目的，未实测即等于未验收。
+
+   **实测结果（#94 / PR #97，run `35913855857`，已回填 ⇒ §7 首验 ④ 实测成立、§10 R2 闭合）**
+
+   被测 PR = **#97**，其改动面**只有一个文件**：`.github/workflows/ci.yml`（白名单 5→6 条 + 文件头注释）。`Dockerfile` / `docker-compose.yml` / `pom.xml` / `.mvn/**` **全部未动** ⇒ 触发归因唯一，不存在「靠别的文件蹭到」。
+
+   ```
+   $ gh pr checks 97
+   Detect image-related changes	pass	6s	…/runs/35913855857/job/107360227117
+   Image Build Guard	pass	2m15s	…/runs/35913855857/job/107360713242
+   Build & Test (JDK 21)	pass	2m4s	…/runs/35913855857/job/107360226728
+   qodana	pending	0	…/runs/35913856238/job/107360227599
+
+   $ gh run view 35913855857 --json status,conclusion,jobs --jq '.conclusion, (.jobs[]|"\(.name) | \(.conclusion) | \(.startedAt) -> \(.completedAt)")'
+   success
+   Build & Test (JDK 21) | success | 2026-09-23T20:07:39Z -> 2026-09-23T20:09:43Z
+   Detect image-related changes | success | 2026-09-23T20:08:48Z -> 2026-09-23T20:08:54Z
+   Image Build Guard | success | 2026-09-23T20:08:58Z -> 2026-09-23T20:11:13Z
+   ```
+
+   ⇒ **`Image Build Guard` 实跑且为 success（2m15s），非 skipped**；同一次 run 中 `Build & Test (JDK 21)` 仍实跑（success，2m4s）。
+
+   触发归因（`Detect image-related changes` job / `Filter image-related paths` step 日志，`gh run view 35913855857 --log --job 107360227117`）：
+
+   ```
+   ##[group]Run dorny/paths-filter@v3
+   with:
+     filters: image:
+       - 'Dockerfile'
+       - 'docker-compose.yml'
+       - 'pom.xml'
+       - '**/pom.xml'
+       - '.mvn/**'
+       # #94：白名单含工作流自身 —— 使「只改本文件的 PR」也跑 image-guard，
+       # 让守门对自己配置的改动有 CI 证据（守门自证，否则该 job 恒被跳过）。
+       - '.github/workflows/ci.yml'
+     token: ***
+     list-files: none
+     initial-fetch-depth: 100
+     predicate-quantifier: some
+   ##[endgroup]
+   ##[group]Fetching list of changed files for PR#97 from Github API
+   Invoking listFiles(pull_number: 97, per_page: 100)
+   Received 1 items
+   [modified] .github/workflows/ci.yml
+   ##[endgroup]
+   Detected 1 changed files
+   Results:
+   ##[group]Filter image = true
+   Matching files:
+   .github/workflows/ci.yml [modified]
+   ##[endgroup]
+   Changes output set to ["image"]
+   ```
+
+   ⇒ 白名单第 6 条 `.github/workflows/ci.yml` **单独命中**（`Detected 1 changed files` / `Filter image = true` / `Changes output set to ["image"]`），`image-guard` 的 `if: needs.changes.outputs.image == 'true'` 由此放行。
+
+   同次 run 的 `image-guard` 断言输出（`--job 107360713242`，**注意：本票不动断言口径，仍是 #89 落地的单路径探针**）：
+
+   ```
+   Assert runtime contract (non-root + /data writable)
+   runtime uid = 999
+   PASS: non-root + /data writable
+   ```
+
+   **结论**：R2 的「白名单增行生效语义」由推理**升级为实测成立**；event 级 `paths-ignore`（`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`）与 job 级白名单的叠加语义**未改变**既有 `Build & Test (JDK 21)` 的触发与 PR 覆盖（该 job 在同次 run 中照常实跑且为 success）。**本项由 #94 / PR #97 实测闭合。**
 2. **runner 上 BuildKit 生效核验**——以首次真实 run 的 `Set up job` 日志确认 `docker compose build app` 走 BuildKit（`RUN --mount=type=cache` 生效），并核 job 总耗时落于 E23 基线可接受增量内。
 3. **断言可判定性自证（v2 / #92 新增，对应 §7 首验 ③）**——在 runner（或等价的本地 Docker）上构造两种镜像并实测：① 腐化镜像（`Dockerfile:48` 的 `chown -R` 去 `-R`，或等价地把两个子目录置为 `root:root`）⇒ **新断言必红且输出具体路径**；② 合法镜像 ⇒ **三路径全绿**。结果（含命令与输出摘要）回填本规范。
 
@@ -328,7 +393,7 @@ Build 票落地时必须先做、且结果回填本规范的三项（对应 §7 
 | 可选 | `cache-to/cache-from=gha` 是否启用 | `non-blocking` | 去留不改变本规范语义 |
 | E9 | #86 声称的本机 `docker compose build app` ~50s **未一手复现** | `non-blocking` | 耗时以 E23（本仓 CI 实测）为预算基线，不采信 E9 数值 |
 | **R1**（v2 新增） | **锚定口径歧义（全案置信度最低项 0.74，真人可否决点）**：「**结构锚定**」（子目录缺失即红，本规范选定）vs「**可用性锚定**」（`mkdir -p "$p"` 后探）。二者在同一「子目录缺失」镜像上结论相反；但该镜像下应用**实际可用**（`JsonFileOrderStore` / `JsonFilePublishStateStore` 写前均有 `Files.createDirectories`） | `non-blocking`（残余） | **翻盘条件**：若认定「合法镜像应按**功能口径**（惰性自建即合法）」⇒ 断言改用 `mkdir -p "$p"` 后探，并同步改 §1 / §6 / §7。此活口未决前**不改实现** |
-| **R2**（v2 新增） | **Q5(b) 白名单增行的生效语义为推理**：workflow 级 `paths-ignore` 不含 `.github/**`（改 `ci.yml` 会触发 workflow），但「job 级白名单叠加后 `image-guard` 确能放行」**须实测**（黑名单与 job 级白名单的交互语义，沿用 §8 纪律） | `non-blocking` | Build 首验 ④ 实测复算（§7 / §8.1）；未实测前不得宣称「守门自证缺口已闭合」 |
+| **R2**（v2 新增，**已由 #94 / PR #97 实测闭合**） | **Q5(b) 白名单增行的生效语义为推理**：workflow 级 `paths-ignore` 不含 `.github/**`（改 `ci.yml` 会触发 workflow），但「job 级白名单叠加后 `image-guard` 确能放行」**须实测**（黑名单与 job 级白名单的交互语义，沿用 §8 纪律） | `non-blocking` → **实测闭合** | Build 首验 ④ 实测复算（§7 / §8.1）；未实测前不得宣称「守门自证缺口已闭合」。**实测结论（run `35913855857`）**：只改 `ci.yml` 的 PR #97 上 `Image Build Guard` **实跑且 success（2m15s，非 skipped）**，paths-filter `Filter image = true` / `Matching files: .github/workflows/ci.yml [modified]`（全 PR 仅此 1 个改动文件）⇒ **触达语义成立，守门自证缺口闭合**；`Build & Test (JDK 21)` 同次 run 仍实跑 success ⇒ 叠加语义未缩既有覆盖。详见 §8.1 |
 | **R3**（v2 新增，**越界登记 / 建议另立票**） | **媒体根未接线缺陷（不在本命题范围）**：`app.media-root: /data/media` 的声明**未被 app 代码消费**；生产媒体根由内容 SPI provider 从环境变量 `FLOWCART_MEDIA_ROOT` 取（缺省**相对** `target/media`），而 compose 的 `app` 服务**未设该变量** ⇒ 容器内媒体根落 `/app/target/media`，`/app` 属 `root:root` ⇒ 运行用户**实测不可创建**（内容链 `media.process` 一旦执行即失败） | `non-blocking`（本命题外） | **另立票**修接线（`Dockerfile` `ENV` 或 compose `environment`）。**本规范不顺手做**（见 §13） |
 | **R4**（v2 新增） | **术语歧义**：本仓「真实写入目标」一词同时被用于 ① **已接线写入目标**（`app.data-root` → `/data/flowcart`，有代码真写）与 ② **已声明数据根**（`app.media-root: /data/media`，声明未接线） | `non-blocking` | 建议在 `CONTEXT.md` 术语表区分二者（glossary 变更，非本规范职责；本规范仅登记） |
 | **R5**（v2 新增） | **`/data/media` 纳入路径集合的判据已如实登记**（见 §5.5）：系守 `Dockerfile:48` 的预建 + chown 契约与规范 0007 §7.2 的声明面，**非**守「已接线行为」（该路径当前无代码写） | `non-blocking` | 若后续 R3 票把 `app.media-root` 接线到 `FLOWCART_MEDIA_ROOT`，本行改述为「守已接线行为」，**断言本身无需变更** |
@@ -340,6 +405,8 @@ Build 票落地时必须先做、且结果回填本规范的三项（对应 §7 
 > **v2 收敛重算（#92）**：Q1 = 三路径 union、Q2.1 = 纯可写性、Q2.2 = 结构锚定、Q3 = `ci.yml` 内联、Q4 = 就地修订本规范、Q5 = 白名单增行——**blocking 未知点全部清零**；残余「锚定口径歧义」（R1）与「白名单执行语义」（R2）均为 `non-blocking`。综合置信度 **0.86**；五条件核验满足 ⇒ `need_human = false`（主理人复核后维持不升级）。**透明注**：若将「为安全承诺定义验收口径」认定为命中「安全」类，则五条件第 ④ 条翻为不满足 ⇒ `need_human = true`；此判定权在真人。
 >
 > **附注（须随 Build 票一并执行，见 §7 首验 ③④ / §8）**：R2 的「白名单增行是否真能触发 `image-guard`」**执行语义待 Build 首验 ④ 实测复算**，未复算前脚本与白名单的落地正确性只能视为**推理成立**；R1 以「真人可否决点」身份活口保留，附翻盘条件、未决前不改实现。
+>
+> **（#94 / PR #97 后追加）** **R2 已实测闭合**：run `35913855857` 上 `Image Build Guard` 实跑且 success、paths-filter 单独命中 `.github/workflows/ci.yml` ⇒ 「白名单增行的落地正确性」由**推理成立**升级为**实测成立**。R1 仍为活口（本票 #94 **只做触达面，不动断言口径**；三路径 union 属 #95）。
 
 ## 11. 回滚 / 可否决与契约影响
 
