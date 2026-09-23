@@ -7,8 +7,8 @@
 # 构建对象 = app 模块（聚合装配可执行 jar，见 app/pom.xml）
 ###############################################################################
 
-# 守门归属（#86 / #88）：本文件承载的「非 root 运行 + /data 开箱可写」运行时承诺，
-# 由 CI `image-guard` job（见 docs/specs/0008-ci-image-build-guard.md）在镜像相关路径变更时构建守门。
+# 守门归属（#86 / #88）：CI `image-guard` job（见 docs/specs/0008-ci-image-build-guard.md）
+# 在镜像相关路径变更时守门构建；「非 root 运行 + /data 开箱可写」的运行时契约断言属 #89。
 
 # ---------- Stage 1: build（编译 + 打包） ----------
 FROM maven:3.9.9-eclipse-temurin-21 AS build
