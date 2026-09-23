@@ -8,8 +8,7 @@
 # 门槛：ArchUnit 禁环测试随 core-contracts slice 纳入后，本流水线即自动拦截三禁环违规（ADR-0009）。
 # 镜像守门（#88）：新增 changes（job 级路径白名单闸门）+ image-guard（docker compose build app，
 # 与部署同源构建 + 失败取证）。仅镜像相关路径变更时触发；既有 build job 的触发条件与 PR 覆盖不变。
-# 守门自证（#94）：白名单已含本工作流文件自身（`.github/workflows/ci.yml`），
-# 故「只改本文件的 PR」也会实跑 image-guard —— 守门对自己配置的改动不再零 CI 证据。
+# 守门自证（#94）：白名单已含本工作流文件自身 —— 守门对自己配置的改动不再零 CI 证据（边界见 filters 前注释）。
 # 运行时契约断言（#89）：image-guard 内落地「非 root + /data 可写」断言，只验外部行为，
 # 重构镜像层序 / 指令不得误伤守门（断言属交付承诺的验收基线，非实现细节）。
 name: CI
@@ -89,6 +88,11 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # #94：白名单含本工作流文件自身 —— 使「只改本文件的 PR」也跑 image-guard，
+          # 让守门对自己配置的改动有 CI 证据（否则仅改 ci.yml 的 PR 恒被跳过）。
+          # 边界：加入的是**单个文件** .github/workflows/ci.yml，不是整个 .github/workflows/** ——
+          # 改 qodana_code_quality.yml（同为「CI 绿」三件套）的 PR 仍拿不到 image-guard 证据；
+          # 将来新增第三个 workflow，也需在此再手动加一行。
           filters: |
             image:
               - 'Dockerfile'
@@ -96,8 +100,6 @@ jobs:
               - 'pom.xml'
               - '**/pom.xml'
               - '.mvn/**'
-              # #94：白名单含工作流自身 —— 使「只改本文件的 PR」也跑 image-guard，
-              # 让守门对自己配置的改动有 CI 证据（守门自证，否则该 job 恒被跳过）。
               - '.github/workflows/ci.yml'
 
   # 镜像构建守门：与部署同源入口构建一次镜像，构建失败即红；#89 已落地运行时契约断言
