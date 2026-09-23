@@ -6,6 +6,8 @@
 # 注意：.github/workflows/** 不在黑名单 → workflow 自身变更必触发，可自验语法。
 # 内容：JDK 定版（21，与根 pom maven.compiler.release 双处一致）+ `mvn clean test`（GHA 依赖缓存）。
 # 门槛：ArchUnit 禁环测试随 core-contracts slice 纳入后，本流水线即自动拦截三禁环违规（ADR-0009）。
+# 镜像守门（#88）：新增 changes（job 级路径白名单闸门）+ image-guard（docker compose build app，
+# 与部署同源构建 + 失败取证）。仅镜像相关路径变更时触发；既有 build job 的触发条件与 PR 覆盖不变。
 name: CI
 
 on:
@@ -61,5 +63,73 @@ jobs:
         with:
           name: surefire-reports
           path: "**/target/surefire-reports/**"
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 路径闸门（job 级白名单）：每次 workflow 都跑，只做路径过滤，无常驻成本。
+  # 仅命中的镜像相关路径变更会让下游 image-guard 被 needs.image == 'true' 放行。
+  changes:
+    name: Detect image-related changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # dorny/paths-filter 在 pull_request 事件下经 REST 读取改动文件清单，需此只读权限
+      pull-requests: read
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter image-related paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            image:
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'pom.xml'
+              - '**/pom.xml'
+              - '.mvn/**'
+
+  # 镜像构建守门：与部署同源入口构建一次镜像，构建失败即红（本票失败信号 = 构建失败；
+  # 运行时契约断言属 #89，本票不写）。不启动任何服务容器（守 #75 边界）。
+  image-guard:
+    name: Image Build Guard
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up BuildKit
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image via compose
+        run: docker compose build app
+
+      - name: Dump image metadata and environment on failure
+        if: failure()
+        run: |
+          {
+            echo "===== docker image inspect flowcart/app:dev ====="
+            docker image inspect flowcart/app:dev || true
+            echo "===== docker version ====="
+            docker version || true
+            echo "===== docker compose version ====="
+            docker compose version || true
+            echo "===== docker buildx version ====="
+            docker buildx version || true
+          } | tee image-guard-diagnostics.txt
+
+      - name: Upload guard diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-guard-logs
+          path: image-guard-diagnostics.txt
           retention-days: 7
           if-no-files-found: ignore
