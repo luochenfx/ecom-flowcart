@@ -8,6 +8,8 @@
 # 门槛：ArchUnit 禁环测试随 core-contracts slice 纳入后，本流水线即自动拦截三禁环违规（ADR-0009）。
 # 镜像守门（#88）：新增 changes（job 级路径白名单闸门）+ image-guard（docker compose build app，
 # 与部署同源构建 + 失败取证）。仅镜像相关路径变更时触发；既有 build job 的触发条件与 PR 覆盖不变。
+# 运行时契约断言（#89）：image-guard 内落地「非 root + /data 可写」断言，只验外部行为，
+# 重构镜像层序 / 指令不得误伤守门（断言属交付承诺的验收基线，非实现细节）。
 name: CI
 
 on:
@@ -93,8 +95,8 @@ jobs:
               - '**/pom.xml'
               - '.mvn/**'
 
-  # 镜像构建守门：与部署同源入口构建一次镜像，构建失败即红（本票失败信号 = 构建失败；
-  # 运行时契约断言属 #89，本票不写）。不启动任何服务容器（守 #75 边界）。
+  # 镜像构建守门：与部署同源入口构建一次镜像，构建失败即红；#89 已落地运行时契约断言
+  # （非 root + /data 可写，只验外部行为）。不启动任何服务容器（守 #75 边界）。
   image-guard:
     name: Image Build Guard
     needs: changes
@@ -112,6 +114,15 @@ jobs:
 
       - name: Build image via compose
         run: docker compose build app
+
+      - name: Assert runtime contract (non-root + /data writable)
+        run: |
+          docker run --rm --entrypoint sh flowcart/app:dev -c '
+            set -e
+            uid=$(id -u); echo "runtime uid = $uid"
+            [ "$uid" != "0" ] || { echo "FAIL: container runs as root"; exit 1; }
+            touch /data/.writecheck && rm /data/.writecheck || { echo "FAIL: /data not writable by runtime user"; exit 1; }
+            echo "PASS: non-root + /data writable"'
 
       - name: Dump image metadata and environment on failure
         if: failure()
