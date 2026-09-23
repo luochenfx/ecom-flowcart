@@ -75,3 +75,4 @@ replay_pid*.log
 !docs/agents/**
 !docs/adr/
 !docs/adr/**
+/.decisions/
