@@ -224,6 +224,8 @@
 
 **已完成（回填）**：workflow 已合并入 base（**引入**守门自检检查本体 = PR #111 / 合并 commit `a32d3de`；随后**修复**其 `run` 正文非法表达式 = PR #113 / 合并 commit `a141e8d`）后，已按 §8.3 三段式执行**线上 trail**，三段结论**均符合预期**（① 绿 / ② 红 / ③ 红，见 §8.3 实测表）⇒ AC2 线上判据**已闭合**。
 
+**同一时序约束亦适用于 §10.1 ⑤ 的静态护栏 step**：该 step 是在 **PR #114** 中**新增进 `guard-selfcheck.yml`** 的 ⇒ 同上理，**#114 自身的 `Guard Self-Check` 通过不能证明新 step 在 GitHub 上跑过**（`pull_request_target` 在 #114 上运行的仍是 base 侧旧定义）⇒ 其**首张线上实证**须在 **#114 合并（`b801404`）后**另开一次性 trail（**PR #115**）取得；实测见 **§10.2**。
+
 ### 8.2 本地自举单测（已执行，方法 + 结果）
 
 在合并前，先以**等价打桩**验证判定逻辑（不打网络）：将 workflow 的判定脚本抽出，用桩替换 `subprocess.run`（`gh api` 调用），**同时喂入 base 与 head 两侧 fixtures**，逐场景核对退出码。第 1 轮 11 场景、第 2 轮扩至 29、第 3 轮扩至 49；**第 4 轮由修复者另建独立夹具台复算 40 场景**（含第 1–3 轮关键回归，及本轮新增的产出 `outputs` 接线 X1–X4、产出 step `coe` / `with` X8、执行性字段族变体；**0 mismatch**）。
@@ -330,6 +332,8 @@
 - 每次观测记录 **run id**（见上表）+ `gh pr checks` / `gh run view` 实证。
 - **无论成败：关 PR（不合并）+ 删分支，并复算 404**（零残留，AC5）。
 
+> **交叉引用**：本节三段式针对的是**既有「不削弱」断言**（消费链）。§10.1 ⑤ 新增的**静态护栏 step**（`run` 正文表达式机检）的**首张线上实证**是**另一次**合并后一次性 trail，见 **§10.2**（trail PR #115）——读者勿把本节三段式误当作新 step 的自举证据。
+
 ## 9. 自守边界清单（Q3 / AC4）
 
 > 问题：**谁来保护这条检查不被同样的手法绕过？** 逐条列清「缺口 / 本票处置 / 兜底」。
@@ -416,6 +420,71 @@ Located at position 11 within expression: steps.<id>.outputs.<key>
 **⑥ 事故为何能躲过 4 轮评审 + 终审（方法论缺口）**：全部验证手段都是 **PyYAML 解析** + **本地把内嵌 Python 当脚本跑**（§8.2 的等价打桩）—— **没有任何一轮模拟 GitHub 侧的表达式插值**。即 **「本地能跑通」≠「GitHub 能跑」**；评审把「脚本语义正确」误当作「workflow 文件合法」。**教训**：对 workflow 文件的验证必须覆盖 **GitHub 侧的解析 / 插值语义**——本票的静态护栏（⑤）即为此缺口的补强。
 
 **⑦ 护栏本地自测（等效打桩，随本票执行）**：抽取新 step 的内嵌判定脚本，桩替换 `subprocess.run`（假 `gh`）后喂入 6 场景：① 真实仓（干净）⇒ 绿；② `run` 正文含字面量 ⇒ 红并给定位；③ 字面量仅在 `env:`（非 `run`）⇒ 绿（证只扫 run 正文）；④ 空目录 ⇒ 红（fail-closed）；⑤ YAML 坏 ⇒ 红（fail-closed）；⑥ 无 `jobs` 映射 ⇒ 红（fail-closed）。**6/6 通过**。
+
+### 10.2 新护栏 step 的线上首跑实证（trail PR #115，源于 PR #114）
+
+> 本节回填 **§10.1 ⑤ 新增的静态护栏 step**（`Assert no GitHub expression inside workflow run bodies`）在 GitHub 上的**首次真实执行**证据。数据由主理人一次性取证（trail PR **#115**），本节**如实照录、不新增判断**。为与全文口径一致并避免复制致 workflow Invalid，本节凡 GitHub 表达式一律以「`$` + 双花括号」转写，不写原始字面量。
+
+**① 为何必须「合并后」取证（结构性时序边界）**
+
+守门自守检查由 **`pull_request_target`** 触发（§5.1 / E4），其 workflow 定义**读自 base 侧、不读被测 PR 的 head** ⇒ **对 `guard-selfcheck.yml`（守门自身 workflow）的任何改动，都无法在引入它的那个 PR 内自测**：`pull_request_target` 在该 PR 上运行的仍是 **base 侧旧定义**（不含新 step）。因此 **PR #114 自身的 `Guard Self-Check` 通过，只能证明「既有检查不回归」，不能证明「新 step 真的在 GitHub 上执行过」** ⇒ 必须在 **#114 合并（merge commit `b801404`）之后**另开一次性 trail 取得首张实证。此即本票**已登记的结构性边界**（与 §8.1「trail 实测不能在 PR-1 自身上完成」同型）。
+
+**② trail 设计（单变量）**
+
+| 项 | 值 |
+|---|---|
+| trail PR | **#115**（一次性取证；`base = main`） |
+| 分支 | `test/114-runbody-guard-trail` |
+| 内容 | 一份**文档探针** + **一次注入**（注入点 = `.github/workflows/ci-gate.yml` 的 `run:` 正文） |
+
+**注入点选 `ci-gate.yml` 的理由**：它**不在守门链内**——既有断言 `assert_head_not_weakened` 锚定的是 **`ci.yml`**——故阶段②对**新护栏 step**构成**单变量**测试（注入 `ci-gate.yml` 不牵动既有断言）。
+
+**③ 阶段①：正向绿基线（未篡改任何 workflow）**
+
+| 项 | 值 |
+|---|---|
+| head commit | `eb6f6a7` |
+| `Guard Self-Check` | **pass**（7s） |
+| run id | `36017095374` |
+| 该运行实际执行的 step | `Set up Python` / `Install PyYAML` / `Assert no GitHub expression inside workflow run bodies` / `Assert guard self-coverage intact (base-anchored, no PR checkout)` |
+| 新 step 的通过语 | `Guard Self-Check: no GitHub expression inside workflow run bodies` |
+
+⇒ 证明「环境可跑通 + 新 step 在 GitHub 上**确实被执行**且**可放行**」（排除「脚本在 runner 上根本跑不起来 ⇒ 恒红」的不可证伪态；与 §8.3 正向绿同一必要性）。
+
+**④ 阶段②：注入必红**
+
+向 `ci-gate.yml` 的 `run:` 正文注入 **1 行**注释形态的 #103 原始非法表达式（即「`$` + 双花括号」包裹 `steps.<id>.outputs.<key>`）：
+
+| 项 | 值 |
+|---|---|
+| head commit | `d35eae5` |
+| `Guard Self-Check` | **fail** |
+| run id | `36017282513` |
+
+**判据（引用的报错输出；其中内嵌表达式按本规范口径转写为「`$` + 双花括号」）**：
+
+```
+##[error]run body contains a GitHub expression literal
+##[error].github/workflows/ci-gate.yml [job=gate] step 'Always-run required gate': GitHub expression literal in run body at run-body line 2 :: # trail 取证注入（#114 阶段②）：「$」+ 双花括号 包裹 steps.<id>.outputs.<key> —— #103 事故的原始形态
+Guard Self-Check FAILED (run-body expression lint):
+ - .github/workflows/ci-gate.yml [job=gate] step 'Always-run required gate': ...
+##[error]Process completed with exit code 1.
+```
+
+> **必读（复制风险）**：上述回显行在原报错输出中**含一段 GitHub 表达式字面量**；本节已按全文口径转写，其余照录。**该字面量形态（「`$` + 双花括号」序列）不得出现在任何 workflow 的 `run` 正文中——它正是本护栏所拦截的 #103 事故形态**，一旦写入会使**整份 workflow 被 GitHub 判 Invalid、永不运行**（§10.1 ② / R10）。
+
+**⑤ 两个附带确认（同一 trail 的观测量）**
+
+1. **顺序符合设计**：阶段②该运行的 step 清单**只有新护栏 step**——既有断言 step（`Assert guard self-coverage intact (base-anchored, no PR checkout)`）**未执行** ⇒ 新 step **先失败**并把 job 停在 `exit 1`，**顺序符合设计**。
+2. **同 SHA 上 `CI Gate` 缺席**：`d35eae5` 上 **`CI Gate` 未产生 check**——因 `ci-gate.yml` 本身被注入**弄成非法 workflow**，GitHub **不再为其产出** check；这是 §10.1 ①「非法 workflow ⇒ 检查从未运行」在 `ci-gate.yml` 上的**同型再现**（非本护栏判定所致）。
+
+**⑥ 收尾：零残留**
+
+trail PR **#115** 按惯例**关闭而不合并**（`state = CLOSED`、`mergedAt = null`），其分支已删除并经 `gh api` **复算远端 ref 为 404** ⇒ **零残留**（与 §8.3 / AC5 同口径）。
+
+**⑦ 本节能力边界（如实登记，不夸大）**
+
+本实证证明的是：**§10.1 ⑤ 的新护栏 step 在 GitHub 上确实被执行、且对「`run` 正文出现表达式字面量」这一 #103 事故形态**报红**（含 fail-closed 链路）。其**闭合面仍仅限 `run` 正文**——**不**覆盖 `name` / `env` 值 / `if` / `with` 等其它会被插值的字段（§10.1 ⑤、R10），**不**声称「整类 workflow Invalid 已闭合」。
 
 ## 11. 新 required context 的顺序死锁（Q4）
 
