@@ -1,0 +1,17 @@
+# 规范 0009 §6.1：新增 always-run 轻量门禁 workflow（CI required status check 门禁）。
+# required status check 的 context 取 job 名（非 workflow 名），故 jobs.gate.name 逐字为 CI Gate。
+# 自包含、恒定上报：不设任何过滤条件、不依赖其它 job，避免上游被跳过导致下游静默绿。
+name: CI Gate
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Always-run required gate
+        run: |
+          echo "required gate: always reports"
