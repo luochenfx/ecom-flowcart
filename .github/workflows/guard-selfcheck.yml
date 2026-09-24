@@ -11,13 +11,17 @@
 #   * 判定锚定 = **base 侧守门链身份 + head 侧「不削弱」断言**：
 #     - 由 **base 版** ci.yml（`github.event.pull_request.base.sha`，PR 不可篡改）解出「门禁链身份」：
 #       下游 job 的 `needs.<j>.outputs.<k>` → 被消费输出 → 产出 step id → 该 step 的 filters.image 基线集合；
-#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）：产出 job/step 仍在且**唯一**且仍为 dorny、
-#       条目 ⊇ base 基线 ∪ 硬基线、产出 job/step 的 `if` 相对 base **未被新增/收紧**、
-#       消费点 `needs.<j>.outputs.<k>` **未被搬走**；
+#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）——**产出侧**：产出 job/step 仍在且**唯一**、
+#       仍 `uses: dorny/paths-filter`（`uses` 与 base 相等）、条目 ⊇ base 基线 ∪ 硬基线、
+#       产出 job/step 的 `if` / `continue-on-error` 相对 base **未变**；**消费侧**：消费点
+#       `needs.<j>.outputs.<k>` 未被搬走、消费 job（`image-guard` 本体）仍在、其 `if` / `needs` /
+#       `continue-on-error` 与 base 相等、其各 step 的 `if` 相对 base 未变（消费节点完整性）；
 #     - **不按** 首个同名 action、**不按** job/step 名、**更不按** 行号（行号易腐，见 0008 §11「行号易腐」注）。
 #   设计要点：**信任 base 侧**（PR 改不动）作为锚，而非 head 侧自报的消费链 —— 据此闭合
 #   「把消费点搬到任意含基线的 job」（A5/A5p）与「给守门链加恒假 `if` 使运行期恒不执行」（A16/A17）
-#   两类「静态结构完好、运行期覆盖已死」的假绿。威胁模型边界见规范 §9 / §13。
+#   两类「静态结构完好、运行期覆盖已死」的假绿；第 3 轮起**对称扩展到消费节点**（`image-guard` 本体
+#   被删 / 其 `if` / `needs` / `continue-on-error` / 其 step `if` 被改 ⇒ 红；A23/A24b/A24c/A27/A28/A30）。
+#   威胁模型边界见规范 §9 / §13。
 #   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
 #
 # 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
@@ -108,6 +112,57 @@ jobs:
               }
 
 
+          def _norm_ws(value):
+              """归一空白：折叠连续空白 + strip；`None` 透传（用于 `uses` / `continue-on-error` 等标量比较）。
+
+              **仅**归一空白，**不**做语义等价 ⇒ 空白重排 ⇒ 等价（绿）；语义变化 ⇒ 仍红。
+              """
+              if value is None:
+                  return None
+              s = value if isinstance(value, str) else str(value)
+              return re.sub(r"\s+", " ", s).strip()
+
+
+          def _norm_expr(value):
+              """归一**表达式**字段（`if`）：先做括号下标归一（`_norm`），再折叠空白。
+
+              ⇒ `needs['changes'].outputs['image']` ≡ `needs.changes.outputs.image`（下标写法等价，A8），
+              且空白重排等价（A33）；任何**语义变化**仍不等（红）。
+              """
+              if value is None:
+                  return None
+              s = value if isinstance(value, str) else str(value)
+              return re.sub(r"\s+", " ", _norm(s)).strip()
+
+
+          def _norm_needs(value):
+              """归一 `needs` 为集合口径（D1 (d3)）：`str` 与单元素 / 多元素 `list` 视为等价。
+
+              `None` ⇒ 空集 `()`；`str` ⇒ 单元素 tuple；`list` ⇒ 元素按字符串排序的 tuple；
+              其它类型 ⇒ `None`（与任何合法值都不等 ⇒ 红，fail-closed）。
+              """
+              if value is None:
+                  return ()
+              if isinstance(value, str):
+                  return (value,)
+              if isinstance(value, list):
+                  return tuple(sorted(str(x) for x in value))
+              return None
+
+
+          def _step_identity(step):
+              """step 的稳定身份（D1 (d4) 口径 (i)）：优先 `name`，无 `name` 时用 `uses` 兜底。"""
+              if not isinstance(step, dict):
+                  return None
+              name = step.get("name")
+              if isinstance(name, str) and name.strip():
+                  return "name:" + name
+              uses = step.get("uses")
+              if isinstance(uses, str) and uses.strip():
+                  return "uses:" + uses
+              return None
+
+
           def api_raw(path, ref):
               """经 GitHub REST API 读指定 ref 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
               proc = subprocess.run(
@@ -129,12 +184,19 @@ jobs:
               """由 **base 版** ci.yml 解出「守门链身份」（可信锚；base 内容 PR 不可篡改）。
 
               锚定面 = **消费链语义结构**（而非「首个同名 action」，也非 job / step 名或行号）：
-                1) 若某 job 的 `if` 引用 `needs.<J>.outputs.<K>` ⇒「被消费的 job 输出」为门禁消费点；
+                1) 若某 job 的 `if` 引用 `needs.<J>.outputs.<K>` ⇒「被消费的 job 输出」为门禁消费点，
+                   引用它的 job 即**消费节点**（本仓 = `image-guard`）；
                 2) 该输出由 `<J>.outputs.<K> = ${{ steps.<ID>.outputs.* }}` 产出 ⇒ 产出步骤 id = <ID>；
                 3) 该产出步骤须为 `uses: dorny/paths-filter*`，取其 `with.filters` → `image` 列表。
 
-              返回 list[dict]（每个门禁链一项，含 producer_job / output_key / step_id / entries /
-              job_if / step_if）；**任一不可识别 ⇒ None**（fail-closed，不猜、不退回旧启发式）。
+              返回 list[dict]（每个门禁链一项）：
+                产出侧 = producer_job / output_key / step_id / step_uses / entries / job_if / step_if /
+                         job_continue_on_error；
+                消费侧 = consumers = [{job_key, if, needs, continue_on_error, step_ifs} ...]。
+
+              **D4 口径**：base 侧引用「产出非 dorny / 产出不可解」的无关 job **跳过**（base 是可信锚，
+              跳过无害），以免将来 base 新增此类 job 令本检查在**所有** PR 上恒红（潜伏恒红）。若跳过
+              全部候选后**无任何合法链** ⇒ 返回 None（fail-closed，不猜、不退回旧启发式）。
               """
               if not isinstance(ci, dict):
                   return None
@@ -142,76 +204,130 @@ jobs:
               if not isinstance(jobs, dict):
                   return None
 
-              gating_outputs = set()
-              for job in jobs.values():
-                  gating_outputs |= _job_if_refs(job)
-              if not gating_outputs:
+              # 收集 base 侧全部门禁消费点引用：(producer_job, output_key) -> {消费 job key}。
+              gating = {}
+              for consumer_key, job in jobs.items():
+                  for ref in _job_if_refs(job):
+                      gating.setdefault(ref, set()).add(consumer_key)
+              if not gating:
                   return None
 
               chains = []
-              for job_key, out_key in sorted(gating_outputs):
-                  job = jobs.get(job_key)
-                  if not isinstance(job, dict):
-                      return None
-                  outputs = job.get("outputs")
+              for (job_key, out_key), consumer_keys in sorted(gating.items()):
+                  producer = jobs.get(job_key)
+                  if not isinstance(producer, dict):
+                      continue  # D4：产出 job 不可解 ⇒ 非门禁链 ⇒ 跳过
+                  outputs = producer.get("outputs")
                   if not isinstance(outputs, dict):
-                      return None
+                      continue
                   m = STEP_OUTPUT_REF.search(_norm(str(outputs.get(out_key) or "")))
                   if not m:
-                      return None
+                      continue
                   step_id = m.group(1)
-                  steps = job.get("steps")
+                  steps = producer.get("steps")
                   if not isinstance(steps, list):
-                      return None
+                      continue
                   matched = [
                       s for s in steps
                       if isinstance(s, dict) and str(s.get("id") or "") == step_id
                   ]
-                  # 步骤缺失或 id 重复 ⇒ 结构有歧义 ⇒ fail-closed（不猜）。
+                  # 步骤缺失或 id 重复 ⇒ 结构有歧义 ⇒ 跳过（非门禁链）
                   if len(matched) != 1:
-                      return None
+                      continue
                   step = matched[0]
-                  if not str(step.get("uses") or "").startswith("dorny/paths-filter"):
-                      return None
+                  uses = str(step.get("uses") or "")
+                  if not uses.startswith("dorny/paths-filter"):
+                      continue  # D4：产出非 dorny ⇒ 跳过（base 侧无关 job）
                   raw = (step.get("with") or {}).get("filters")
                   if not isinstance(raw, str):
-                      return None
+                      continue
                   try:
                       parsed = yaml.safe_load(raw)
                   except yaml.YAMLError:
-                      return None
+                      continue
                   if not isinstance(parsed, dict) or not isinstance(parsed.get("image"), list):
-                      return None
+                      continue
+
+                  # 消费节点完整性基线（D1 (d1)-(d5)）：记录每个消费 job 的 key / if / needs /
+                  # continue-on-error / 各 step 的「身份 → if」映射。
+                  consumers = []
+                  for consumer_key in sorted(consumer_keys):
+                      cjob = jobs.get(consumer_key)
+                      if not isinstance(cjob, dict):
+                          continue
+                      csteps = cjob.get("steps")
+                      if not isinstance(csteps, list):
+                          continue
+                      step_ifs = {}
+                      ambiguous = False
+                      for cstep in csteps:
+                          ident = _step_identity(cstep)
+                          if ident is None:
+                              continue
+                          if ident in step_ifs:
+                              ambiguous = True
+                              break
+                          step_ifs[ident] = cstep.get("if")
+                      if ambiguous:
+                          # 消费 job step 身份歧义 ⇒ 该消费节点不可解 ⇒ 跳过（base 可信锚，跳过无害）
+                          continue
+                      consumers.append({
+                          "job_key": consumer_key,
+                          "if": cjob.get("if"),
+                          "needs": _norm_needs(cjob.get("needs")),
+                          "continue_on_error": cjob.get("continue-on-error"),
+                          "step_ifs": step_ifs,
+                      })
+                  if not consumers:
+                      continue
+
                   chains.append({
                       "producer_job": job_key,
                       "output_key": out_key,
                       "step_id": step_id,
+                      "step_uses": uses,
                       "entries": {str(x) for x in parsed["image"]},
-                      "job_if": job.get("if"),
+                      "job_if": producer.get("if"),
+                      "job_continue_on_error": producer.get("continue-on-error"),
                       "step_if": step.get("if"),
+                      "consumers": consumers,
                   })
+              if not chains:
+                  return None
               return chains
 
 
           def _if_changed(base_if, head_if):
-              """D1(c)：base 无 `if` ⇒ head 必须无 `if`；base 有 `if` ⇒ head 必须与 base 相等。
+              """D1(c)/D3：base 无 `if` ⇒ head 必须无 `if`；base 有 `if` ⇒ head 须与 base **归一后相等**。
 
-              「新增 / 收紧」一律视为变更（红）—— 闭合「给守门链加恒假 `if` ⇒ 运行期恒不执行」
-              （A16 / A17）这类静态结构完好、运行期覆盖已死的假绿。
+              归一 = 括号下标归一（`_norm`）+ 折叠连续空白 + strip（`_norm_expr`）⇒ **空白重排 / 下标写法
+              视为等价（绿，修 A8/A33）**；任何**语义变化**（新增 / 收紧 / 恒假写法）仍视为变更（红）——
+              闭合「给守门链加恒假 `if` ⇒ 运行期恒不执行」（A16 / A17）这类静态结构完好、运行期覆盖已死
+              的假绿。消费侧 `if`（(d2)）与产出侧 `if`（(c)）共用本判据。
               """
-              b = None if base_if is None else str(base_if)
-              h = None if head_if is None else str(head_if)
-              return b != h
+              return _norm_expr(base_if) != _norm_expr(head_if)
 
 
           def assert_head_not_weakened(base_chains, head_ci):
-              """对 head 侧做「不削弱」断言；返回失败信息 list（空 = 全通过）。
+              """对 head 侧做「不削弱」断言（含**消费节点完整性**）；返回失败信息 list（空 = 全通过）。
 
-              逐条（对应 D1 (a)-(d)）：
-                (a) 同 job key 存在、同 step id 存在且**唯一**、该 step 仍 `uses: dorny/paths-filter*`；
+              **产出侧（D1 (a)-(c)）**
+                (a) 同 job key 存在、同 step id 存在且**唯一**、该 step 仍 `uses: dorny/paths-filter*`
+                    且 `uses` 与 base **相等**（闭合「换掉 / 换版本 dorny」类）；
                 (b) 该 step 的 `filters.image` ⊇ **BASE_ENTRIES ∪ 硬基线**（不得删除/弱化 base 承诺的条目）；
-                (c) 该 **产出 job **与** 产出 step ** 的 `if` 相对 base 未被新增/收紧；
-                (d) head 侧仍有 job 的 `if` 引用 `needs.<J>.outputs.<K>`（消费点未被搬走）。
+                (c) 该 **产出 job** 与 **产出 step** 的 `if` 相对 base **归一后相等**；产出 job 的
+                    `continue-on-error` 与 base 相等（闭合「加 `if` / `continue-on-error` 使运行期覆盖已死」）。
+              **消费侧（D1 (d1)-(d5)，第 3 轮新增）**——消费节点 = base 中「`if` 引用 `needs.<J>.outputs.<K>`
+              的 job」（本仓 = `image-guard` 本体，即守门本体）：
+                (d)  head 侧仍有 job 的 `if` 引用 `needs.<J>.outputs.<K>`（消费点未被搬走）；
+                (d1) 同**消费 job key** 在 head **存在**（闭合「整删门禁 job」A24b）；
+                (d2) 该消费 job 的 `if` 与 base **归一后相等**（闭合 A23a/b/c、A24c、A30）；
+                (d3) 该消费 job 的 `needs` 与 base 相等（集合口径，容忍 `str` vs 单元素 `list`，闭合 A28）；
+                (d4) 该消费 job 的**每个**（base 侧可定位的）step 在 head **存在且唯一**、其 `if` 与 base
+                     **归一后相等**（口径 (i)：按 step `name`，无 `name` 用 `uses` 兜底；闭合消费 step
+                     加 `if:false` 的 A27）；
+                (d5) 该消费 job 的 `continue-on-error` 与 base 相等（同类变体：恒不阻断）。
+              全部失败信息**可定位**（含 job key / step 身份 / base 与 head 的差异值）。
               """
               if not isinstance(head_ci, dict):
                   return ["{} structure unrecognizable at head (top-level is not a mapping)".format(CI_PATH)]
@@ -225,6 +341,21 @@ jobs:
                   head_refs |= _job_if_refs(job)
 
               fails = []
+
+              def check_if(label, base_if, head_if):
+                  if _if_changed(base_if, head_if):
+                      fails.append(
+                          "{} `if` changed vs base (base={!r} head={!r})".format(label, base_if, head_if)
+                      )
+
+              def check_scalar(label, base_val, head_val):
+                  if _norm_ws(base_val) != _norm_ws(head_val):
+                      fails.append(
+                          "{} changed vs base (base={!r} head={!r})".format(
+                              label, base_val, head_val
+                          )
+                      )
+
               for ch in base_chains:
                   J, K, ID = ch["producer_job"], ch["output_key"], ch["step_id"]
 
@@ -235,72 +366,119 @@ jobs:
                           "needs.{}.outputs.{} (guard chain moved off the base anchor)".format(J, K)
                       )
 
-                  # (a) 产出 job / step 仍在、唯一、仍为 dorny/paths-filter。
+                  # ---- 产出侧 (a)-(c) ----
                   hjob = hjobs.get(J)
                   if not isinstance(hjob, dict):
                       fails.append("producer job '{}' missing at head".format(J))
-                      continue
-                  hsteps = hjob.get("steps")
-                  if not isinstance(hsteps, list):
-                      fails.append("producer job '{}' has no steps list at head".format(J))
-                      continue
-                  matched = [
-                      s for s in hsteps
-                      if isinstance(s, dict) and str(s.get("id") or "") == ID
-                  ]
-                  if len(matched) != 1:
-                      fails.append(
-                          "producing step id '{}' in job '{}' missing or not unique at head "
-                          "(count={})".format(ID, J, len(matched))
-                      )
-                      continue
-                  hstep = matched[0]
-                  if not str(hstep.get("uses") or "").startswith("dorny/paths-filter"):
-                      fails.append(
-                          "producing step '{}' in job '{}' no longer uses dorny/paths-filter "
-                          "at head".format(ID, J)
-                      )
-                      continue
-
-                  # (b) filters.image ⊇ BASE_ENTRIES ∪ 硬基线。
-                  raw = (hstep.get("with") or {}).get("filters")
-                  entries = None
-                  if isinstance(raw, str):
-                      try:
-                          parsed = yaml.safe_load(raw)
-                      except yaml.YAMLError:
-                          parsed = None
-                      if isinstance(parsed, dict) and isinstance(parsed.get("image"), list):
-                          entries = {str(x) for x in parsed["image"]}
-                  if entries is None:
-                      fails.append(
-                          "producing step '{}' in job '{}' filters.image unrecognizable at "
-                          "head".format(ID, J)
-                      )
                   else:
-                      required = ch["entries"] | BASELINE_IMAGE_ENTRIES
-                      missing = required - entries
-                      if missing:
+                      hsteps = hjob.get("steps")
+                      matched = [
+                          s for s in (hsteps if isinstance(hsteps, list) else [])
+                          if isinstance(s, dict) and str(s.get("id") or "") == ID
+                      ]
+                      if not isinstance(hsteps, list):
+                          fails.append("producer job '{}' has no steps list at head".format(J))
+                      elif len(matched) != 1:
                           fails.append(
-                              "whitelist entries weakened: {} missing from filters.image of "
-                              "job '{}'/step '{}' (present={})".format(
-                                  sorted(missing), J, ID, sorted(entries)
+                              "producing step id '{}' in job '{}' missing or not unique at head "
+                              "(count={})".format(ID, J, len(matched))
+                          )
+                      elif not str(matched[0].get("uses") or "").startswith("dorny/paths-filter"):
+                          fails.append(
+                              "producing step '{}' in job '{}' no longer uses dorny/paths-filter "
+                              "at head".format(ID, J)
+                          )
+                      else:
+                          hstep = matched[0]
+                          # (a) 强化：产出 step 的 `uses` 与 base 相等（闭合换 dorny 版本 / 换 action）。
+                          check_scalar(
+                              "producing step '{}' `uses` in job '{}'".format(ID, J),
+                              ch["step_uses"], hstep.get("uses"),
+                          )
+                          # (b) filters.image ⊇ BASE_ENTRIES ∪ 硬基线。
+                          raw = (hstep.get("with") or {}).get("filters")
+                          entries = None
+                          if isinstance(raw, str):
+                              try:
+                                  parsed = yaml.safe_load(raw)
+                              except yaml.YAMLError:
+                                  parsed = None
+                              if isinstance(parsed, dict) and isinstance(parsed.get("image"), list):
+                                  entries = {str(x) for x in parsed["image"]}
+                          if entries is None:
+                              fails.append(
+                                  "producing step '{}' in job '{}' filters.image unrecognizable at "
+                                  "head".format(ID, J)
+                              )
+                          else:
+                              required = ch["entries"] | BASELINE_IMAGE_ENTRIES
+                              missing = required - entries
+                              if missing:
+                                  fails.append(
+                                      "whitelist entries weakened: {} missing from filters.image of "
+                                      "job '{}'/step '{}' (present={})".format(
+                                          sorted(missing), J, ID, sorted(entries)
+                                      )
+                                  )
+                          # (c) 产出 step 的 `if` 未被新增/收紧。
+                          check_if(
+                              "producing step '{}' in job '{}'".format(ID, J),
+                              ch["step_if"], hstep.get("if"),
+                          )
+                      # (c) 产出 job 的 `if` / `continue-on-error` 未变。
+                      check_if("producer job '{}'".format(J), ch["job_if"], hjob.get("if"))
+                      check_scalar(
+                          "producer job '{}' `continue-on-error`".format(J),
+                          ch["job_continue_on_error"], hjob.get("continue-on-error"),
+                      )
+
+                  # ---- 消费侧 (d1)-(d5)：消费节点完整性 ----
+                  for cons in ch["consumers"]:
+                      C = cons["job_key"]
+                      hc = hjobs.get(C)
+                      # (d1) 消费 job 本体仍在。
+                      if not isinstance(hc, dict):
+                          fails.append(
+                              "gating consumer job '{}' missing at head (guard job deleted?; it consumed "
+                              "needs.{}.outputs.{})".format(C, J, K)
+                          )
+                          continue
+                      # (d2) 消费 job 的 `if` 未变。
+                      check_if("gating consumer job '{}'".format(C), cons["if"], hc.get("if"))
+                      # (d3) 消费 job 的 `needs` 未变（集合口径）。
+                      if cons["needs"] != _norm_needs(hc.get("needs")):
+                          fails.append(
+                              "gating consumer job '{}' `needs` changed vs base (base={!r} head={!r})".format(
+                                  C, list(cons["needs"]), hc.get("needs")
                               )
                           )
-
-                  # (c) 产出 job / step 的 `if` 未被新增/收紧。
-                  if _if_changed(ch["job_if"], hjob.get("if")):
-                      fails.append(
-                          "producer job '{}' `if` changed vs base (base={!r} head={!r})".format(
-                              J, ch["job_if"], hjob.get("if")
-                          )
+                      # (d5) 消费 job 的 `continue-on-error` 未变。
+                      check_scalar(
+                          "gating consumer job '{}' `continue-on-error`".format(C),
+                          cons["continue_on_error"], hc.get("continue-on-error"),
                       )
-                  if _if_changed(ch["step_if"], hstep.get("if")):
-                      fails.append(
-                          "producing step '{}' `if` changed vs base (base={!r} head={!r})".format(
-                              ID, ch["step_if"], hstep.get("if")
+                      # (d4) 消费 job 的每个 step 仍在、唯一、`if` 未变。
+                      chsteps = hc.get("steps")
+                      if not isinstance(chsteps, list):
+                          fails.append("gating consumer job '{}' has no steps list at head".format(C))
+                          continue
+                      idx = {}
+                      for s in chsteps:
+                          ident = _step_identity(s)
+                          if ident is not None:
+                              idx.setdefault(ident, []).append(s)
+                      for ident, base_step_if in cons["step_ifs"].items():
+                          cands = idx.get(ident, [])
+                          if len(cands) != 1:
+                              fails.append(
+                                  "gating consumer step [{}] in job '{}' missing or ambiguous at head "
+                                  "(count={})".format(ident, C, len(cands))
+                              )
+                              continue
+                          check_if(
+                              "gating consumer step [{}] in job '{}'".format(ident, C),
+                              base_step_if, cands[0].get("if"),
                           )
-                      )
               return fails
 
 
