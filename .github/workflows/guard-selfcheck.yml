@@ -1,0 +1,160 @@
+# 守门自守检查（issue #103）—— 覆盖 #94-① 登记的残余边界：
+# 「镜像守门不可自守『删除自己』」。
+#
+# 背景（规范 0008 §10 R2 ①）：ci.yml 的 image-guard 路径白名单由 dorny/paths-filter
+# 从**被测 PR 自身的检出**读取；某 PR 只要删掉白名单里的 `- '.github/workflows/ci.yml'`
+# 这一行，该 PR 自身就不再被 image-guard 覆盖 ⇒ 删除动作本体拿不到任何 CI 证据。
+#
+# 本检查的设计前提 —— 判定「不读被测 PR 自身的检出」：
+#   * 触发用 pull_request_target ⇒ 本 workflow 定义读自 base（默认分支），PR 无法篡改检查本体；
+#   * 全程不 actions/checkout、不执行任何 PR 代码，只经 GitHub REST API 读 head 侧文件做判定；
+#   * 判定锚定 = 语义结构（action 名 + 输入键 + 条目集合下界），**不按 job/step 名或行号**
+#     （行号锚定易腐，见 0008 §11「行号易腐」注）。
+#   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
+#
+# 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
+name: Guard Self-Check
+
+on:
+  # pull_request_target：workflow 定义来自 base/默认分支（GITHUB_SHA=默认分支末次提交，
+  # GITHUB_REF=默认分支）⇒ PR 改不动本检查本体；且该事件属「可为 required check 产出
+  # 可评估 check」的合规事件集合（官方文档）。默认活动类型 = opened / synchronize / reopened。
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+# 最小权限：只读即可完成判定；不触碰 secrets、不写任何东西（pull_request_target 安全用法）。
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: guard-selfcheck-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  selfcheck:
+    name: Guard Self-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert guard self-coverage intact (base-anchored, no PR checkout)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          import yaml
+
+          REPO = os.environ["REPO"]
+          HEAD = os.environ["PR_HEAD_SHA"]
+
+          CI_PATH = ".github/workflows/ci.yml"
+          SELF_PATH = ".github/workflows/guard-selfcheck.yml"
+          # 基线期望集合：硬编码于 base 侧本 workflow（PR 不可篡改）——下界断言。
+          # 语义 = 「changes job 的 filters.image 白名单条目集合 ⊇ 基线期望集合」。
+          BASELINE_IMAGE_ENTRIES = {".github/workflows/ci.yml"}
+
+
+          def api_raw(path):
+              """经 GitHub REST API 读 head 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
+              proc = subprocess.run(
+                  [
+                      "gh", "api",
+                      "-H", "Accept: application/vnd.github.raw",
+                      "-H", "X-GitHub-Api-Version: 2022-11-28",
+                      "repos/{}/contents/{}?ref={}".format(REPO, path, HEAD),
+                  ],
+                  capture_output=True,
+                  text=True,
+              )
+              if proc.returncode == 0:
+                  return True, proc.stdout, ""
+              return False, "", (proc.stderr or "").strip()
+
+
+          def image_filter_entries(ci):
+              """定位 dorny/paths-filter step → with.filters.image 条目集合。
+
+              锚定面 = action 名（dorny/paths-filter）+ 输入键（filters.image）+ 条目集合，
+              而非 job / step 名或行号 ⇒ 抗「改名 / 挪行 / 增补条目」的结构漂移。
+              返回 set；结构不可识别时返回 None。
+              """
+              jobs = (ci or {}).get("jobs") or {}
+              if not isinstance(jobs, dict):
+                  return None
+              for job in jobs.values():
+                  if not isinstance(job, dict):
+                      continue
+                  for step in job.get("steps") or []:
+                      if not isinstance(step, dict):
+                          continue
+                      if str(step.get("uses") or "").startswith("dorny/paths-filter"):
+                          raw = (step.get("with") or {}).get("filters")
+                          if not isinstance(raw, str):
+                              return None
+                          try:
+                              parsed = yaml.safe_load(raw)
+                          except yaml.YAMLError:
+                              return None
+                          if not isinstance(parsed, dict) or not isinstance(parsed.get("image"), list):
+                              return None
+                          return {str(x) for x in parsed["image"]}
+              return None
+
+
+          fail = []
+
+          # (1) 自守：本检查自己的 workflow 文件在 head 侧仍须存在（防「删除 / 改名守门本体」）。
+          #     语义：PR 无法用「删掉守门自己的文件」来让守门失效 —— 该删除在本 PR 上即报红。
+          #     边界：本断言只保「文件存在」（文件名是稳定契约）；对文件**内容**的逻辑弱化，
+          #     由 base 侧执行语义（本运行读 base 定义）与 code review 兜底，见规范 §8。
+          ok, _, err = api_raw(SELF_PATH)
+          if not ok:
+              fail.append(
+                  "guard workflow {} not found at head {} (deleted or renamed?); api_err={}".format(
+                      SELF_PATH, HEAD, err
+                  )
+              )
+
+          # (2) 核心：head 侧 ci.yml 的 filters.image 仍须覆盖基线条目（防「删掉白名单那一行」）。
+          ok, text, err = api_raw(CI_PATH)
+          if not ok:
+              fail.append("{} not found at head {} (deleted?); api_err={}".format(CI_PATH, HEAD, err))
+          else:
+              try:
+                  ci = yaml.safe_load(text)
+              except yaml.YAMLError as e:
+                  # 覆盖残余边界 ②：改坏 ci.yml 语法 ⇒ 本检查在此报错（不再零证据）。
+                  fail.append("{} YAML invalid at head {}: {}".format(CI_PATH, HEAD, e))
+                  ci = None
+              entries = image_filter_entries(ci)
+              if entries is None:
+                  fail.append(
+                      "could not locate dorny/paths-filter 'filters.image' in head {} "
+                      "(guard structure changed?)".format(CI_PATH)
+                  )
+              else:
+                  missing = BASELINE_IMAGE_ENTRIES - entries
+                  if missing:
+                      fail.append(
+                          "whitelist self-entry removed: {} not in filters.image "
+                          "(present={})".format(sorted(missing), sorted(entries))
+                      )
+
+          if fail:
+              print("::error title=Guard Self-Check FAILED::guard self-coverage is broken")
+              for item in fail:
+                  print("::error::{}".format(item))
+              print("Guard Self-Check FAILED:")
+              for item in fail:
+                  print(" - " + item)
+              sys.exit(1)
+
+          print("Guard Self-Check PASSED: whitelist self-entry intact and guard workflow present.")
+          PY
