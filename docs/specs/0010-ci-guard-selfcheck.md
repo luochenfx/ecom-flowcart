@@ -3,6 +3,7 @@
 > 来源：GitHub issue [#103『Build: 守门不可自守删除自己——设计不读 PR 自身检出的检查』](https://github.com/luochenfx/ecom-flowcart/issues/103)（label `ready-for-agent`）
 > 依赖：[规范 0008（CI 镜像构建守门）](./0008-ci-image-build-guard.md) §10 R2（残余边界 ①「删除自己」/ ②「语法级失效」）、§11（回滚路径 2「白名单行删除」）、§13；[规范 0009（CI required status check 门禁）](./0009-ci-required-status-gate.md) §10 R4、§13（均声明本项**另开独立 build 票**）
 > 状态：**v1.4（实现期 + 第 4 轮审查修复）** —— 落地自守 workflow 本体 + 本规范。第 1 轮审查后：锚定面改为**消费链**、**显式**安装 PyYAML、收窄权限、补自守边界 B8、补三段式（正向绿→删行红→语法坏红）trail 计划、补 `0009` §10 R4 一行回指。**第 2 轮审查后**：锚定基座改为 **base 侧守门链** + head 侧「不削弱」断言（闭合 A5/A5p「消费点搬到任意含基线的 job」与 A16/A17「给守门链加恒假 `if`」两类**静态结构完好、运行期覆盖已死**的假绿）、正则**兼容括号下标语法**（修 A8 假红）、**修正 B8/§13 R1 被证伪的表述**、新增 **B9/B10** 与**威胁模型边界**段落（D1-B）。**第 3 轮审查后**：把「不削弱」断言**对称扩展到消费节点**（消费 job = 门禁本体 `image-guard`），闭合 **A23a/b/c、A24b、A24c、A27、A28、A30** 等消费侧假绿；`if` 比较改为**空白 + 下标语法归一**（修 A33）；`locate_base_chains` 跳过 base 侧「产出非 dorny」的无关 job（修潜伏恒红 D4）；A25 登记为 B 类边界。**第 4 轮审查后（本版）**：按主理人裁决把判据从「逐属性打地鼠」升级为**可枚举的封闭字段集合**（**执行性**：job/step 的 `if` / `needs` / `strategy` / `continue-on-error` / `uses`（job 另含 `concurrency`）；**输出接线**：产出 job `outputs.<K>` 逐键值、产出 step `with` 的非 `filters` 键），补**产出 job `outputs.<K>` 接线断言**（闭合 **X1–X4**）与**产出 step `continue-on-error` / `with` 断言**（闭合 **X8**），并给出**封闭性论证**（§6.2.1）；**收窄 §8.2/§9.1/§13 R8 的「一律红」过度声称**、**修正 AC1 为「部分闭合 / 已枚举构造」**、新增 **B12**、登记 **step 内容 / `uses` 版本面**。trail 自举实测须待 workflow 合并入 base 后执行（见 §8 时序依赖）。**v1.5（本版：回填线上自举取证 + P0 事故归档）**：三段式线上 trail 已完成并按实测回填（§8.3）；新增 **§10.1** 归档「workflow 被判 Invalid ⇒ 检查从未运行」的 P0 事故、记录新增的**静态护栏**（`run` 正文表达式机检，见 §10.1 ⑤）与 **R10**；AC1/AC2/AC5 更新为实测结论。**全文为与护栏口径一致，凡 GitHub 表达式一律以「`$` + 双花括号」转写，不写原始字面量。**
+> **v1.6（本版：issue #116 触发面加固交付规范）** —— 来源：issue [#116『Build: 自守检查触发面加固——on.paths / paths-ignore / types 三种写法须全覆盖』](https://github.com/luochenfx/ecom-flowcart/issues/116)，据已收敛决策记录 **DR-116-01**（决策日志 `.decisions/116-guard-trigger-surface-hardening-decision-log.md`）定稿。本版：① 把「**触发面**」登记为 §6.2.1 封闭字段集合的**第三类**（官方 `pull_request_target` 过滤键恰 5 个且可枚举 ⇒ 与既有两类同型）；② 新增 **§8.4**（#116 可执行交付规范：AC 清单 / 硬约束 HC-1–HC-10 / 判定口径 / 四段式线上取证 / 残留 R-A·R-B·R-C / 可否决点 / 回滚）；③ §9 新增 **B13**；④ 改写 **§13 R9** 并新增 **R11–R13**；⑤ 更新 **§3.1 Out** 与 **§16** 的 follow-up 票号；⑥ §12 增列本轮写面。**措辞红线（本版强制）**：本版只声称「**PR 阶段必红已闭合**」；「**阻止生效**」与「**合并后删掉/改坏本断言**」属**登记残留**（R-A / R-B），**不得**声称「已闭合触发面」「已可阻止其生效」「已闭合 B2」。
 > 范围声明：本规范**只**解决「镜像守门的路径白名单**不再自守自己**」这一命题（#94-① 残余边界）。**不改** mirror 守门的判据与运行时契约断言（AC3），**不设/不改任何 required check**（归 #104），**不碰** `docs/architecture.md`（归 #105）。详见 §3 与 §16。
 
 ## 1. 决策概览
@@ -39,7 +40,7 @@
 |---|---|
 | 命题 | 如何加一条**判定不依赖被测 PR 自身检出**的检查，使「删掉白名单自守条目（或改坏 `ci.yml` 语法）」的 PR **必然拿到红色的 CI 证据** |
 | In | 一条自守 workflow 的**触发机制选型**、**判定证据源**、**锚定面**、**自守边界**与**回滚路径** |
-| Out | mirror 守门判据 / 运行时契约断言的任何改动（AC3）；required 构成（#104）；`docs/architecture.md`（#105）；**触发面治理**——`paths-ignore`（C4，0009 备选）与 **`on.pull_request.paths` 正向过滤（A25，主理人裁决为 B 类边界 + 另立票，见 §9.1 边界②）**；镜像内容架构 |
+| Out | mirror 守门判据 / 运行时契约断言的任何改动（AC3）；required 构成（#104，已 CLOSED）；`docs/architecture.md`（#105）；镜像内容架构。**触发面治理（v1.6 更新；按判据主体分两侧）**：**(2a) 本检查自身触发面**（`guard-selfcheck.yml` 的 `on.pull_request_target` 的 `paths` / `paths-ignore` / `types` 等过滤键）—— 其「**PR 阶段报红**」一侧**已由 #116 闭合**（本规范 **§8.4**，交付物 = 在 `guard-selfcheck.yml` 内新增一条**对 head 侧自身 `on` 块**的断言 step），其「**阻止生效**」一侧属登记残留 **R-A**（非 required ⇒ 带红仍可合入）；**(2b) 其它 workflow 的触发面**（`ci.yml` 的 `paths-ignore`（C4，0009 备选）与 **`on.pull_request.paths` 正向过滤（A25）**）—— **#116 不覆盖**（判据主体是另一文件，#116 的新断言**不读** `ci.yml` 的 `on` 块），维持「**B 类边界 + 另立票**」，归 **#119（架构 / 配置面）或另立 follow-up 票**；见 §6.2.1 末「范围澄清」/ §9.1 边界② / §13 R9 |
 
 ### 3.2 收敛状态
 
@@ -165,6 +166,7 @@
 |---|---|---|---|
 | **执行性** | job：`if` / `needs` / `strategy` / `continue-on-error` / `uses` / `concurrency`；step：`if` / `uses` / `continue-on-error` | `if` / `continue-on-error` 用表达式口径（下标归一 + 空白折叠）；`needs` 集合口径；`uses` 标量口径；`strategy` / `concurrency` 递归规范形（键序无关） | 任一被削弱都可能使该 job/step **恒不执行**（`if` / `needs` 跳过、`strategy` 空矩阵 ⇒ 零 job、`concurrency` 取消 ⇒ 沿 `needs` 链下游 skipped；**job 跳过 = 官方语义 Success，E5**）或**静默吞掉失败**（`continue-on-error`、`uses` 换成「成功但不产 output」的 action）⇒ **输出为空 ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖** |
 | **输出接线** | 产出 job `outputs.<K>` 值；产出 step `with` 的非 `filters` 键 | `outputs` 用表达式口径（下标归一 + 空白折叠）；`with` 非 `filters` 键用递归规范形 | 被改成恒假 / 被删除 / 改指其它 step ⇒ `needs.<J>.outputs.<K>` 解析为非 `'true'` ⇒ 消费侧 `if` 恒假；`list-files` / `predicate-quantifier` 改变 `image` 输出语义 |
+| **触发面**（v1.6 / #116，**第三类**） | 本 workflow 自身 `on.pull_request_target` 下的**官方过滤键**：`types` / `branches` / `branches-ignore` / `paths` / `paths-ignore`（**恰 5 个、可枚举**） | `types` 用**集合下界**口径（`⊇ {opened, synchronize, reopened}`，键缺失按官方默认三型判绿）；`paths` / `paths-ignore` / `branches` / `branches-ignore` 用**存在即红**口径；集合外的键 ⇒ fail-closed 红 | 触发面决定「**本检查是否会在某个 PR 上被实例化**」——任一非空过滤都会**缩小**触发面 ⇒ 被过滤掉的 PR 上本检查**根本不产生 run**（连红都不产生，比假绿更隐蔽：§10.1 ① 的同型失效）。详见 **§8.4** |
 
 **封闭性论证（为什么集合之外的字段不改变「是否执行」或「输出值」，因而不产生零覆盖）**：本检查的命题是「守门链**运行期是否仍在覆盖**」，其可静态判定的维度**只有两个**：
 
@@ -175,7 +177,17 @@
    - **仅运行期语义**（输入使过滤恒不匹配、fork `ref` 不可解析、dorny 语义变更等）**无法静态判定** ⇒ 如实登记为边界（§9.1 ①②③），**不在本集合的静态闭合面内**（本检查不声称能判定）。
 2. **输出是否可能取值**——由**输出接线**决定（产出 job `outputs` 值 / 产出 step `with` 非 `filters` 键 / `filters.image` 下界）。集合之外不存在其它「产出值的来源」：`outputs.<K>` 的取值只由 `steps.<ID>.outputs.*` 决定，而 `<ID>` 的「是否执行 / 输出语义」已由 (a)/(a')/(b)/(e) 覆盖。
 
-⇒ **集合 {执行性} ∪ {输出接线} 覆盖了「节点是否执行」与「输出是否可能取值」两个充要维度**；其余字段的唯一影响是把**静默**转成**可见红**，故不纳入（其削弱在本检查中**不产生假绿**）。**触发面 / 配置面**（`on.paths` 的 A25、ruleset）属**另一轴**，显式登记为 B 类边界（§9.1 边界②），亦不在本集合内。
+⇒ **集合 {执行性} ∪ {输出接线} 覆盖了「节点是否执行」与「输出是否可能取值」两个充要维度**；其余字段的唯一影响是把**静默**转成**可见红**，故不纳入（其削弱在本检查中**不产生假绿**）。**配置面**（ruleset）与 **`ci.yml` 自身的触发面**（`on.pull_request.paths` 的 A25）属**另一轴**，显式登记为 B 类边界（§9.1 边界②），亦不在本集合内。
+
+**第三类「触发面」的纳入（v1.6 / #116，采纳决策记录 DR-116-01 的 N6 建议）**：
+
+前两类断言的**判据主体**都是 `ci.yml`（守门链），回答「**守门链运行期是否仍在覆盖**」。第三类**判据主体换成 `guard-selfcheck.yml` 自身**，回答另一个问题：「**本检查自己会不会在某个 PR 上被实例化**」——若本检查自身的 `on.pull_request_target` 被加上任何非空过滤键，被过滤掉的 PR 上本检查**根本不产生 run**（连红都不产生），**其失效形态与 §10.1 ① 的「workflow 被判 Invalid ⇒ 检查从未运行」同型**，比假绿更隐蔽。
+
+**可枚举性（与既有两类同型 ⇒ 判据封闭）**：官方对 `pull_request_target` 的**触发过滤键恰为 5 个、可枚举** —— `types` / `branches` / `branches-ignore` / `paths` / `paths-ignore`。其中**任何非空过滤都只会缩小触发面**（不存在「扩大触发面」的过滤键）⇒ **「出现即红」对该 4 键成立**（`types` 另走集合下界，见 §8.4.4）⇒ 判据**封闭**，与 §6.2.1 前两类的封闭性论证同构。
+
+**为何不采用「值相等」口径**：若改为「head 侧 `on.pull_request_target` 与 base 侧**值相等**」，则日后 base 侧**合法地**新增一个过滤键时，判据会**连带放宽** ⇒ 违反 issue #116「三种写法须全覆盖」的措辞（判据只许收紧、不许随 base 漂移）。
+
+> **范围澄清（重要）**：第三类**只**覆盖 **`guard-selfcheck.yml` 自身**的 `on.pull_request_target`。它**不**覆盖其它 workflow 的触发面（§9.1 边界② 的 A25 = `ci.yml` 的 `on.pull_request`）。**证据**：`ci.yml` 当前 `on.pull_request` **已含** `paths-ignore: ["docs/**","**/*.md","LICENSE",".gitignore"]`（本仓合法基线）⇒ 若把四键 deny-list 套到 `ci.yml`，**当前 `main` 会立即恒红** ⇒ 该扩展在**未先设计例外白名单**前不可行 ⇒ **#116 不覆盖 A25**，A25 维持「另立票」登记（§13 R9）。
 
 **边缘字段归类结论（主理人 D1 待评估项）**：
 
@@ -216,6 +228,8 @@
 - [x] **AC4（自守边界）**：明确写清本检查**自身的自守边界**（谁来保护它不被同样的手法绕过）——见 §9。——**已闭合**（§9 B1–B12 + §9.1 威胁模型边界）。
 - [x] **AC5（零残留）**：自举用的 trail PR **关而未合**、trail 分支**已删**；无遗留新增分支 / PR。——**已闭合（线上实测）**：trail PR **#112** 已 **CLOSED**（未合并，`mergedAt=null`），其分支已删除并经 `gh api` **复算返回 404** ⇒ **零残留成立**。
 
+> **另见**：上表 AC1–AC5 对应 issue **#103** 的 AC①–④ 与零残留要求；issue **#116（触发面加固）** 的验收条目为 **AC116-1 – AC116-12**，见 **§8.4.2**（其残留见 §8.4.6 / §13 R11–R13）。
+
 ## 8. 落地与自举实测
 
 ### 8.1 时序依赖（**关键**：trail 实测不能在 PR-1 自身上完成）
@@ -231,6 +245,8 @@
 在合并前，先以**等价打桩**验证判定逻辑（不打网络）：将 workflow 的判定脚本抽出，用桩替换 `subprocess.run`（`gh api` 调用），**同时喂入 base 与 head 两侧 fixtures**，逐场景核对退出码。第 1 轮 11 场景、第 2 轮扩至 29、第 3 轮扩至 49；**第 4 轮由修复者另建独立夹具台复算 40 场景**（含第 1–3 轮关键回归，及本轮新增的产出 `outputs` 接线 X1–X4、产出 step `coe` / `with` X8、执行性字段族变体；**0 mismatch**）。
 
 **第 1 轮审查**发现「诱饵 step 遮蔽」假绿后，锚定面从「首个同名 action」改为**消费链**。**第 2 轮审查**发现「消费链锚定」仍存在**同根因**的假绿：静态结构无法区分「被定位到的产出链**运行期是否被执行**」（消费点转移到 `if:false` 的产出 job ⇒ A5p；给守门链加 `if:false` ⇒ A16/A17）。**第 3 轮审查**进一步发现**消费侧**（`image-guard` 本体）未被断言 ⇒ 门禁 job 被删 / 其 `if` 被改恒假 / 其 step 被加 `if` 仍静默绿（A23a/b/c、A24b、A24c、A27、A28、A30）。**第 4 轮审查**发现**产出侧** `outputs.<K>` 接线未被断言（改写 / 删除 / 改指产出 job `outputs.image` ⇒ 消费侧 `if` 恒假 ⇒ 静默绿；**X1–X4**），与产出 step `continue-on-error`（**X8**）同根因。第 4 轮据此把断言**对称扩展到消费节点**并升级为**封闭字段集合**（§6.2.1），补 `outputs` / `with` 接线断言，并修复 A33 空白重排假红、D4 潜伏恒红。下表为**第 1–4 轮合并场景**（带「第 4 轮」标注者为本轮新增 / 复核；base 侧默认 = 「正本 `ci.yml`」；凡标注 base 系构造者属该场景显式设定；head 侧为构造）：
+
+> **本表范围**：只收 **#103 轮已实测**的打桩构造（每行均带 ✅ 实测结论与判据原文）。**未实测**的构造（如 #116 的 `types: [labeled]`，见 §8.4.2 **AC116-5** / §8.4.5 阶段④）**不列入本表**，待其 build PR 取证后另立实证章节，**不在本表补行**。
 
 | # | head 侧构造 | 期望 | 实测 |
 |---|---|---|---|
@@ -271,7 +287,7 @@
 | **A33** | 产出 `if` 仅**空白重排**（「`$` + 双花括号」包裹 `  x  !=  'y'  `（多余空白）vs base 紧凑写法） | **绿**（修后不假红） | ✅ exit 0，`PASSED` |
 | **A33b** | 产出 `if` **语义变化**（`!=` → `==`） | 红 | ✅ exit 1，``producer job 'changes' `if` changed`` |
 | **A33c** | 消费 `if` 仅**空白重排** | **绿** | ✅ exit 0，`PASSED` |
-| **A25** | `on.pull_request` 加 `paths: ["Dockerfile","pom.xml"]`（不含 `ci.yml`） | **绿**（B 类边界，已裁决；**仅登记、不闭合**） | ✅ exit 0，`PASSED`（见 §9.1 边界②） |
+| **A25** | `on.pull_request` 加 `paths: ["Dockerfile","pom.xml"]`（不含 `ci.yml`） | **绿**（B 类边界，已裁决；**仅登记、不闭合**） | ✅ exit 0，`PASSED`（见 §9.1 边界②）。**注**：本行 **A25 = `ci.yml` 触发面**；与 issue #116 正文所称「A25」（指**本检查自身** `types` 被改成 `[labeled]`）**编号冲突、指代不同** —— 后者 = **#116 的对象**，其「PR 阶段报红」由 **§8.4 / AC116-5** 定义，**须待 #116 的 build PR 落地并完成四段式取证后**方才成立（**当前未实现、未取证**）；前者**不**被 #116 覆盖（编号冲突见 §13 R9 表后脚注） |
 | A36 | 消费 job 加 `continue-on-error: true` | 红 | ✅ exit 1，``gating consumer job 'image-guard' `continue-on-error` changed`` |
 | A37 | 产出 step `uses` 换版本（`dorny/paths-filter@v9`） | 红 | ✅ exit 1，``producing step 'filter' in job 'changes' `uses` changed vs base`` |
 | A38 | 产出 job 加 `continue-on-error: true` | 红 | ✅ exit 1，``producer job 'changes' `continue-on-error` changed`` |
@@ -334,6 +350,127 @@
 
 > **交叉引用**：本节三段式针对的是**既有「不削弱」断言**（消费链）。§10.1 ⑤ 新增的**静态护栏 step**（`run` 正文表达式机检）的**首张线上实证**是**另一次**合并后一次性 trail，见 **§10.2**（trail PR #115）——读者勿把本节三段式误当作新 step 的自举证据。
 
+### 8.4 #116 触发面加固：可执行交付规范（v1.6）
+
+> **时态声明（v1.6，读本节与相关条目必读）**：本节是 **规范态**（v1.6 规范轮产出），**不是既成事实**。本规范中凡「已由 #116 闭合 / 已机制化判红 / 存在即红」等**完成态**表述（含 **§3.1 (2a)**、**§6.2.1 第三类「触发面」行**、本节全节、**§9 B13**、**§13 R9 (2a)**），一律指「**#116 的 build PR 落地并完成 §8.4.5 四段式取证之后**」的状态。**当前（v1.6）未实现、未取证**：`.github/workflows/guard-selfcheck.yml` 现仍只有 4 个 step（`Set up Python` / `Install PyYAML` / `Assert no GitHub expression inside workflow run bodies` / `Assert guard self-coverage intact`），**无任何触发面断言 step**（`trigger surface` / 「触发面」匹配数 = 0），其 `on.pull_request_target` 现为无过滤的 `types: [opened, synchronize, reopened]`。⇒ 读者**不得**据本规范推断「当前 PR 已受触发面断言保护」。
+
+> **来源**：issue [#116](https://github.com/luochenfx/ecom-flowcart/issues/116)（OPEN）+ 已收敛决策记录 **DR-116-01**。本节是 #116 的**可执行交付规范**（实现与取证由 #116 的 build PR 承担）；本节**不声称**「已闭合触发面」或「已可阻止其生效」——只交付「**PR 阶段必红**」，残留见 §8.4.6 与 §13 R11–R13。
+
+#### 8.4.1 选定方案与组合边界
+
+**方案 C1**：在 `guard-selfcheck.yml` 内**新增一条 step**，对 **head 侧 `guard-selfcheck.yml` 自身的 `on` 块**做「触发面未被削弱」断言（`pull_request_target` 读 base 定义 ⇒ 该断言在**引入它的 PR 内不执行**，故取证必须走合并后 trail，见 §8.4.5）。
+
+**组合边界（写死，不得突破）**：
+
+| # | 边界 |
+|---|---|
+| ① | **不碰** ruleset `23927156`、**不动** required 构成（归 #104 已 CLOSED / 其后续票） |
+| ② | **不新增第二个 workflow**（候选 C5「独立 workflow」/ C7「ruleset `workflows` rule」均被拒） |
+| ③ | **不改** `ci.yml` / `ci-gate.yml` / `qodana_code_quality.yml` 一字 |
+
+**验收口径**：#116 交付「**报红**」；「**阻止生效**」**不作为本票交付物**，显式登记为残留（§8.4.6 R-A），归 **#119（架构 / 配置面）或另立 follow-up 票**。依据：issue #116 验收要点逐字为「报红，**或**有其它机制确实阻止其生效」⇒ 二者取一即可收口。
+
+#### 8.4.2 #116 验收条目（AC116，逐条可判）
+
+> 判读通则：**「无 run」≠「红」**。每条「必红」条目必须取到**一次真实 run**（`event=pull_request_target`、`name=Guard Self-Check`）且 `conclusion=failure` + **判据原文**；若注入导致该 commit 上**根本不产生 run**，该条判为**取证失败**（须重新设计注入点），**不得**记为通过。
+
+| # | 条目 | 判据 |
+|---|---|---|
+| **AC116-1** | 注入 `paths` 必红 | head 侧 `on.pull_request_target` 出现 `paths` ⇒ 新 step 报红，判据原文含键名 `paths` 与文件名 |
+| **AC116-2** | 注入 `paths-ignore` 必红 | 同上，键名 `paths-ignore` |
+| **AC116-3** | 注入 `branches` 必红（**可否决点 1；条件性**） | 同上，键名 `branches`。若可否决点 1 被否决 ⇒ 本条删除，并按 §8.4.7 登记新边界 |
+| **AC116-4** | 注入 `branches-ignore` 必红（**可否决点 1；条件性**） | 同上，键名 `branches-ignore` |
+| **AC116-5** | `types: [labeled]` 必红 | head 侧 `types` 不含默认三型 ⇒ 红（下界缺口须在判据中逐项列出） |
+| **AC116-6** | **删掉显式 `types` ⇒ 绿**（反假红） | 键缺失按官方默认三型判绿；若判红即**假红缺陷**，须修 |
+| **AC116-7** | **正向绿基线成立**（不可省） | 未改动的 trail commit ⇒ 该 step **绿**，且**四个 step 全部执行**（证明脚本在 runner 上跑得通 ⇒ 排除「恒红不可证伪」） |
+| **AC116-8** | 形态 fail-closed 必红 | `on` 改为字符串 / 列表、删掉 `pull_request_target`、其值非映射、head 侧自身文件读不到 ⇒ **一律红** |
+| **AC116-9** | 既有两断言不回归 | 四段式全程：既有 `Assert guard self-coverage intact` 与 `Assert no GitHub expression inside workflow run bodies` 在**其被执行时**结论与未注入时一致（`ci.yml` 未改动 ⇒ 绿） |
+| **AC116-10** | 零残留 | trail PR **关而不合**（`state=CLOSED`、`mergedAt=null`）+ 分支已删 + `gh api` 复算远端 ref **404** |
+| **AC116-11** | 不越界 | 本票 diff **仅** `.github/workflows/guard-selfcheck.yml`（新增 1 个 step）+ 规范文档；`ci.yml` / `ci-gate.yml` / `qodana_code_quality.yml` / ruleset **零改动**（`git diff main...HEAD -- <上述路径>` 为空） |
+| **AC116-12** | P0 插值合规（自包含） | 新 step 的 `run:` 正文**不含**「`$` + 双花括号」序列（含注释内）；一切量经 `env:` 传入。该事实由**既有护栏 step** 在 AC116-7 的绿基线上**顺带机检**（即本仓自包含自检，不依赖本地辅助脚本） |
+
+#### 8.4.3 硬约束（HC-1 – HC-10，实现方逐条对照）
+
+| # | 硬约束 | 违反后果 |
+|---|---|---|
+| **HC-1** | **PyYAML 取键口径（最高优先级）**：`yaml.safe_load` 下 YAML 1.1 把 `on` 解析成**布尔键 `True`** ⇒ 取触发块**必须**走 `doc.get(True)`，并以字符串 `"on"` 作**回退**；两者同时存在且**不相等** ⇒ fail-closed 红；`True` 键的值**非 mapping** ⇒ 红 | 忽略 ⇒ 取到 `None` ⇒ 断言**永久静默绿**（比不做更糟）。**一手复算**：本仓 `pyyaml==6.0.3` 下 `safe_load(guard-selfcheck.yml)` ⇒ `top keys = ['name', True, 'permissions', 'concurrency', 'jobs']`、`get("on") -> None`、`get(True) -> {'pull_request_target': {'types': ['opened','synchronize','reopened']}}` |
+| **HC-2** | **P0 插值硬约束**：新 step 的 `run:` 正文内**不得出现**「`$` + 双花括号」序列（**写在注释里也触发**）⇒ 整份 workflow 被判 **Invalid、永不运行**；一切量经 `env:` 传入 | §10.1 ① 的 P0 事故重演：本检查**对所有 PR 零覆盖**且**不产生任何 run** |
+| **HC-3** | **deny-list 键集（存在即红）**：`paths` / `paths-ignore` / `branches` / `branches-ignore`；**并追加**：`pull_request_target` 下出现这 4 键与 `types` 之外的**未知键 ⇒ fail-closed 红** | 与 §10.1 ⑤「有意的全禁策略」同口径；**不得**日后以「误红」为由放宽 |
+| **HC-4** | **`types` 下界集合** = `{opened, synchronize, reopened}`；判定 = `⊇`；**键缺失 ⇒ 按官方默认三型判绿**；非列表 / 空列表 ⇒ 红 | 用 `==` 会打成**假红**（删掉显式 `types` 是语义等价写法），与 §8.2 修 A8/A33 假红的方向**相反** |
+| **HC-5** | **形态 fail-closed**：顶层非 mapping / 无 `on` / `on` 非 mapping / 无 `pull_request_target` / 其值非 mapping / head 侧自身文件读不到（沿用 `api_raw(SELF_PATH, HEAD)`）⇒ **一律红**，不猜、不静默通过 | —— |
+| **HC-6** | **不改变本 workflow 自身的触发面**（保持无 `paths` / `if` / `needs`，恒定上报） | 保住 §11 第 3 条的 required 资格前提 |
+| **HC-7** | **取证节奏不可省略项**：四段式（① 绿 ② `paths` 红 ③ `paths-ignore` 红 ④ `types: [labeled]` 红）；每段记录 **head sha + run id + 判据原文**；trail **关而不合 + 删分支 + 复算 404** | 缺 ① ⇒ ②③④ 不可证伪；②③ 合并 ⇒ 违反 issue「三种写法须全覆盖」 |
+| **HC-8** | **step 位置**：紧跟 `Install PyYAML` 之后、**在既有 `Assert guard self-coverage intact` 之前** | 与 #115 先例同位（§10.2），保证**单变量归因**：新 step 先失败即 `exit 1`，job 停在该 step 上 |
+| **HC-9** | **spec 写面**（本轮）：0010 §6.2.1 增「第三类：触发面」+ 封闭性论证、§9 增 B13、§13 R9 改写 + 增 R11–R13、§16 更新票号；**不改** `ci.yml` / `ci-gate.yml` / ruleset | —— |
+| **HC-10** | **措辞红线**：spec 与 PR 描述中**不得**出现「已闭合触发面」「已可阻止其生效」「已闭合 B2」；只允许写「**PR 阶段必红已闭合**，『阻止生效』+ 合并后可删断言属登记残留」 | 越线即**过度声称**，须回改 |
+
+#### 8.4.4 判定口径（实现方照此实现）
+
+```
+目标文件 = head 侧 SELF_PATH（".github/workflows/guard-selfcheck.yml"），经 api_raw(SELF_PATH, HEAD) 取原文（不 checkout）
+
+(1) 取触发块（HC-1）
+    doc = yaml.safe_load(text)                    # YAML 1.1 把 on: 解析为布尔 True
+    t_bool = doc.get(True)      if isinstance(doc, dict) else None
+    t_str  = doc.get("on")      if isinstance(doc, dict) else None
+    两键都存在且不相等                -> 红（fail-closed）
+    两者皆缺失 / 顶层非 mapping        -> 红
+    trig = 存在者（优先 True 键）      # 非 mapping -> 红
+
+(2) 取 pull_request_target 块
+    prt = trig.get("pull_request_target")
+    prt 缺失 / 非 mapping               -> 红
+    注：trig 为字符串或列表（如 `on: push` / `on: [push]`）-> 无 pull_request_target -> 红
+
+(3) deny-list（存在即红，HC-3）
+    命中 paths / paths-ignore / branches / branches-ignore 任一 -> 红
+    prt 的键集合 ⊄ {types, paths, paths-ignore, branches, branches-ignore} -> 红（未知键，fail-closed）
+
+(4) types 下界（HC-4）
+    键缺失                              -> 绿（官方默认三型 = 同一下界）
+    值非列表 / 空列表                    -> 红
+    set(值) ⊇ {opened, synchronize, reopened} ? 绿 : 红（并逐项列出缺口）
+```
+
+**失败信息要求**：须含**文件名 + 具体键名 + observed 值**，与既有断言的 `::error::` 口径一致（可定位、可复核）。**通过语**：打印一行明确放行语（格式对齐既有两 step，如 `Guard Self-Check: pull_request_target trigger surface intact`）。
+
+#### 8.4.5 四段式线上取证（不可省略、不可合并）
+
+**为何必须「合并后 + 四段」**：`pull_request_target` 读 **base 侧**定义（§8.1）⇒ 新断言 step 在**引入它的 PR 内根本不执行** ⇒ 单 PR + 文档论证**不可证伪**（「必红」与「脚本恒红」无法区分）——#103 的 P0 事故正是此坑（「本地能跑通」≠「GitHub 能跑」，§10.1 ⑥）。
+
+| 阶段 | head commit 构造 | 期望 | 必记录项 |
+|---|---|---|---|
+| **① 正向绿基线（不可省）** | 仅新增文档探针，**不触碰**任何 workflow | **绿**（且四个 step 全部执行） | head sha / run id / 新 step 通过语 / step 清单 |
+| **② 注入 `paths`** | head 侧 `on.pull_request_target` 加 `paths` | **红** | head sha / run id / 判据原文（含 `paths`） |
+| **③ 注入 `paths-ignore`** | 同上，键换 `paths-ignore` | **红** | head sha / run id / 判据原文（含 `paths-ignore`） |
+| **④ `types: [labeled]`** | 把 `types` 换成 `[labeled]` | **红**（判据须列出 `opened`/`synchronize`/`reopened` 三缺口） | head sha / run id / 判据原文 |
+
+- **② 与 ③ 不得合并、不得任选其一**（issue #116 要求三种写法**全覆盖**）；AC116-3/4（`branches` / `branches-ignore`）若采纳可否决点 1 的四键口径，则**与 ②③ 同轮追加两段**（共六段）；若可否决点 1 被否决则不加段，但须按 §8.4.7 登记边界。
+- **注入点 = head 侧 `guard-selfcheck.yml` 自身的 `on` 块**：对既有两断言构成**单变量**（`ci.yml` 未动 ⇒ 既有断言不受牵动）。
+- **收尾（零残留）**：trail PR **关而不合** + **删分支** + `gh api` **复算 404**（与 §8.3 / §10.2 ⑥ 同口径）。
+- **② 的附加判读**：注入 `paths` 后 base 定义仍无过滤 ⇒ 该 run **照常产生**；若该 commit 上**无 run** ⇒ 判**取证失败**（非「红」），须记录并重新设计注入点。
+
+#### 8.4.6 残留登记（R-A / R-B / R-C，逐字保留，不得淡化）
+
+- **R-A**：本方案使削弱 PR 拿到**红色** Guard Self-Check，但因 Guard Self-Check **当前不是 required**（实测 required 名单只有 `CI Gate`）⇒ **削弱 PR 仍可带红被合入** ⇒ **不声称「阻止生效」**。
+- **R-B**：「合并后删掉/改坏这条断言」= **0010 §9 B2 的结构性下限**（任何 CI 都无法自保「自己的定义被合并掉」）⇒ **不得声称闭合 B2**。
+- **R-C**：`types` 的 required 语义（check 缺失 vs Pending）**未实测且官方无据**（官方 skip 归因表仅 path / branch / commit message 三种）⇒ **不作为本票任何判据**。
+
+> 补充（R-C 的处置依据）：本票范围**不含 required**（§3.1 Out / §12）⇒ 不产生实测样本 ⇒ R-C 对本决策**无信息价值**（无论该语义成立与否，都不改变「采纳 C1 + 报红」）；实测须真人临时加入 required，有**全局副作用**（所有 PR 被一条未经验证的新 required 卡住）⇒ R-C 由 blocking **降级为 non-blocking 登记项**。
+
+#### 8.4.7 可否决点 1（人工可单点否决）与回滚路径
+
+**可否决点 1（本方案唯一可拆项）**：若不接受 Q3 中 `branches` / `branches-ignore` 的**超纲增补**（issue #116 只要求 `paths` / `paths-ignore` / `types` 三种写法），可把 deny-list **缩回三键**（`paths` / `paths-ignore` + `types` 下界），**其它裁决完全不变**。此时须在 §9.1 边界② 与 §13 R9 **显式登记新边界**：「`branches` / `branches-ignore` 仍可被削弱（本检查不判红）」为**新增 B 类边界**。
+
+**连带接受的约束**：采纳四键 deny-list 等价于接受「**今后永远不得对本检查加任何触发过滤**」（含 `branches` / `branches-ignore`）。**当前无需为此新设逃生舱** —— 本检查**非 required** ⇒ 红**不阻断**（误红可带红合入）；**日后若纳入 required，才必须同时配逃生舱**（§10 第 4 条已登记该待办，属 #104 后继票范围）；逃生舱**不得**以收窄本判据的方式实现。
+
+**回滚路径**：删该 step，或 revert 合并 commit；因本检查**非 required** ⇒ **不产生 required 死锁**（§14 已核）。
+
+#### 8.4.8 时序依赖与行号易腐注
+
+- **时序依赖**：同 §8.1 —— 本 step 的**首张线上实证**须在其**合并入 `main` 之后**另开一次性 trail 取得；引入它的 PR 自身的 `Guard Self-Check` 通过**只能证明「既有断言不回归」**，**不能证明「新 step 在 GitHub 上执行过」**（#114 / #115 先例，§10.2 ①）。
+- **行号易腐注（承 0008 §11）**：本节**不以行号**作判据或文档锚点，一律按 **step 名称**定位（`Install PyYAML` / `Assert guard self-coverage intact (base-anchored, no PR checkout)` / `Assert no GitHub expression inside workflow run bodies`）与 **YAML 解析后的语义结构**（`on.pull_request_target.*`）。实现方如遇本节引用的行号与现状不符，**按语义锚定改写**即可，不改判据。
+
 ## 9. 自守边界清单（Q3 / AC4）
 
 > 问题：**谁来保护这条检查不被同样的手法绕过？** 逐条列清「缺口 / 本票处置 / 兜底」。
@@ -352,8 +489,9 @@
 | B10 | **fork PR 的 `?ref=<fork-sha>` 可解析性**：`head_sha` 在 fork PR 下是 **fork 内提交**；`GET /repos/{base}/contents/{path}?ref={sha}` 能否解析 fork 提交**待实测** | **未实测**：本仓当前**无 fork 工作流**（用同仓 `ci/**`、`test/**` 分支）⇒ 影响低 | fail-closed（404 ⇒ 红，**非假绿**）；若确不可解析，处理方向 = 经 `refs/pull/<N>/head` 读取（登记为后续加固候选） |
 | B11 | **消费节点（门禁本体 `image-guard`）被削弱**（第 3 轮新增面）：整删该 job / 改名、改其 `if` 恒假、删其 `needs`、给其 step 加 `if:false`、加 `continue-on-error`、改其 `strategy` / `uses` / `concurrency` | **已机制化判红**：消费侧 (d1) 存在 / (d2) 消费 job **执行性字段** / (d3) 各 step **执行性字段** 相对 **base 锚**逐条比对，任一不成立即红（§8.2 A23a/b/c、A24b、A24c、A27、A28、A30、A36、A39、A41、**X7 / E2 / E3**） | 与 B9 同：合法等价重构（改名 / 等价改写 `if`）⇒ 需人工确认（宁严勿松，当前非 required 不阻断） |
 | B12 | **产出 job `outputs.<K>` 输出接线被削弱**（第 4 轮新增面）：改写 / 删除 `changes.outputs`、把 `outputs.image` 改为常量 / 空串 / 改指其它（不产 `image` 的）step；或给产出 step 加 `continue-on-error` / 改 `with` 的非 `filters` 键（`list-files` 等） | **已机制化判红**：产出 job `outputs.<K>`（base 每个键）**归一后**须与 base 相等；产出 step 的 `continue-on-error` 与 `with` 非 `filters` 键须与 base 相等（§8.2 **X1 / X2 / X3 / X4 / X8 / E4**） | 与 B9/B11 同：合法等价改写（如 `outputs` 用下标写法）⇒ 归一后等价 ⇒ 不红；真实内容变化 ⇒ 需人工确认 |
+| **B13** | **本检查自身触发面被削弱**（v1.6 / #116 新增面）：给 `guard-selfcheck.yml` 自己的 `on.pull_request_target` 加上 `paths` / `paths-ignore` / `branches` / `branches-ignore`（**缩小**触发面 ⇒ 被过滤掉的 PR 上本检查**根本不产生 run**，与 §10.1 ①「从未运行」同型），或把 `types` 换成不含默认三型的集合 | **PR 阶段已机制化判红**：新 step「触发面未被削弱」断言（**§8.4**）对 head 侧本文件自身 `on` 块取**四键 deny-list + `types` 下界**（HC-1–HC-5）⇒ 削弱 PR 在本 PR 上即拿红 | **残留 R-A**：本检查**非 required** ⇒ **带红仍可合入** ⇒ **不声称「阻止生效」**；残留 **R-B**：合并后删掉 / 改坏本断言 = **B2 结构性下限**，**不声称闭合 B2**。**可否决点 1**：`branches` / `branches-ignore` 可拆回**（缩回三键），届时须按 §8.4.7 登记「该两键仍可被削弱」为新增 B 类边界。**时态**：本行「已机制化判红」为**规范态**，指 #116 build PR 落地并完成取证后（见 **§8.4 头「时态声明」**） |
 
-**一句话**：**B1/B5/B7/B8/B9/B11/B12 已机制化闭合；B6/B10 为如实登记的边界；B2/B3/B4 是任何 CI 自守检查的**结构性下限**（merge 后定义 / 配置面 / admin 面），本票**如实登记**、由 review 与 ruleset 兜底，**不假装能自保**。此外 **A25（触发面：`on.paths`）属已裁决的 B 类边界**（§9.1 边界②）。**本检查的（静态）闭合面 = §6.2.1 定义的封闭字段集合（执行性 + 输出接线）**。
+**一句话**：**B1/B5/B7/B8/B9/B11/B12 已机制化闭合（均为 #103 轮既成事实）；B13（本检查自身触发面，仅「PR 阶段报红」一侧）已机制化闭合 —— 属**规范态**，指 #116 build PR 落地并完成取证后，见 §8.4 头「时态声明」**；B6/B10 为如实登记的边界；B2/B3/B4 是任何 CI 自守检查的**结构性下限**（merge 后定义 / 配置面 / admin 面），本票**如实登记**、由 review 与 ruleset 兜底，**不假装能自保**。此外 **A25（`ci.yml` 的触发面：`on.pull_request.paths`）仍属 B 类边界 + 另立票**（§9.1 边界② / §13 R9）——**#116 不覆盖它**（证据见 §6.2.1 末「范围澄清」）。**本检查的（静态）闭合面 = §6.2.1 定义的封闭字段集合（执行性 + 输出接线 + 触发面）**。
 
 ### 9.1 威胁模型边界（D1-B）
 
@@ -362,11 +500,13 @@
 **不在本票闭合面内**（如实登记，不假装能自保）：
 
 1. **仅运行期才可判定的失效**——例如某输入语义（或 dorny 过滤语义）使 `filters.image` **恒不匹配**、或守门链运行期因外部条件被跳过；**§6.2.1 的封闭集合是静态面，无法判定运行期语义** ⇒ **另立票**，不夸大本检查能力。
-2. **触发面削弱（A25）——主理人已裁决为 B 类边界 + 另立票，本票不阻断**：如 `on.pull_request.paths`（正向白名单）排除 `.github/workflows/ci.yml` ⇒ 改 `ci.yml` 的 PR **不再触发** `ci.yml` ⇒ `image-guard` 根本不跑 ⇒ 守门对该 PR 零覆盖（且 `ci-gate.yml` 的 `CI Gate` 为自包含 always-run 令牌，**不代偿** image-guard）。**本票不闭合**（A25 仍判绿），裁决理由：
+2. **触发面削弱 —— 分两侧处置（v1.6 更新）**：
+   - **(2a) 本检查自身触发面（`guard-selfcheck.yml` 的 `on.pull_request_target`）= 已由 #116 闭合「PR 阶段报红」**：新增断言 step（**§8.4**）取**四键 deny-list + `types` 下界**，削弱 PR **在本 PR 上即拿红**（自守边界见 **B13**）。**残留**：非 required ⇒ 带红仍可合入（**R-A**）；合并后可删断言属 **B2 结构性下限**（**R-B**）⇒ **不声称「阻止生效」、不声称「已闭合触发面」**。
+   - **(2b) `ci.yml` 自身触发面（A25）= 仍为 B 类边界 + 另立票，#116 不覆盖**：如 `on.pull_request.paths`（正向白名单）排除 `.github/workflows/ci.yml` ⇒ 改 `ci.yml` 的 PR **不再触发** `ci.yml` ⇒ `image-guard` 根本不跑 ⇒ 守门对该 PR 零覆盖（且 `ci-gate.yml` 的 `CI Gate` 为自包含 always-run 令牌，**不代偿** image-guard）。**本检查仍判绿**。**不覆盖的证据**：`ci.yml` 当前 `on.pull_request` **已含** `paths-ignore: ["docs/**","**/*.md","LICENSE",".gitignore"]`（本仓合法基线）⇒ 若把 #116 的四键 deny-list 套到 `ci.yml`，**当前 `main` 会立即恒红** ⇒ 该扩展在**先设计例外白名单**之前不可行 ⇒ 归**另立票**。**注意**：本处 A25 指「**`ci.yml` 的触发面**」，与 issue #116 正文所称「A25」（指本检查自身 `types` 被改成 `[labeled]`）**编号冲突、指代不同**（编号冲突见 §13 R9 表后脚注）。裁决理由（沿用原裁决）：
    - ① 本票命题的锚定面是 **job/step 消费链**；`on` **事件级触发过滤**属**另一轴（触发面）**；
    - ② `0008` §3.1 / §13 与 `0010` §3.1 已把 **`paths-ignore` / 触发面治理列为 Out**；
-   - ③ 若把触发面纳入，闭合面将**无界**（会延伸到 ruleset、平台配置）；
-   - ④ 但仍**如实登记**该缺口：闭合它属**独立机制**，与 ruleset `workflows` rule **同属「触发 / 配置面」加固** ⇒ **另立票**（本票不实现）。
+   - ③ 若把 **`ci.yml` 的触发面**纳入，闭合面将**无界**（会延伸到 ruleset、平台配置；且 `ci.yml` 现基线已含合法 `paths-ignore` ⇒ 须先设计例外白名单，见 §6.2.1 末「范围澄清」）；
+   - ④ 但仍**如实登记**该缺口：闭合它属**独立机制**，与 ruleset `workflows` rule **同属「触发 / 配置面」加固** ⇒ **另立票**（本规范不实现）：**#119（架构 / 配置面）或另立 follow-up 票**。
 3. **架构级解法（后续加固候选，本票只登记、不实现）**——① ruleset 的 **`workflows` rule** 指定 base 侧 workflow（需 admin）；② 把 `image-guard` 迁到 **`pull_request_target`**。
 4. **step 内容面（`run` 正文 / `with` 参数 / step 顺序）**：消费 job 的 step 把 `Build image via compose` 的 `run` 改成 `echo skip`、或改写消费 step 的 `with` ⇒ **本检查判绿**（**有意取舍**）：这类改动**弱化覆盖但 check 仍产出**（非静默零覆盖），且无法静态判定其语义 ⇒ **不纳入** §6.2.1 的封闭集合，**归 code review（可拒绝）**。**边界澄清（第 4 轮）**：消费 / 产出 step 的 **`uses`（含版本）已纳入执行性集合**（§8.2 **A37/E3**，改变了第 3 轮 `(d4)` 仅比 `if` 的口径）；本条**仅**涵盖 `run` 正文 / `with`（产出 step 的 `with` 非 `filters` 键除外，见 §6.2.1）。
 
@@ -503,6 +643,8 @@ trail PR **#115** 按惯例**关闭而不合并**（`state = CLOSED`、`mergedAt
 | **新增（本票）** | `.github/workflows/guard-selfcheck.yml` | 自守 workflow（§6 骨架）：`pull_request_target` + REST 读 **base（可信锚）/ head（被测）** + 守门链「不削弱」断言 + 自守断言 + **`run` 正文表达式护栏**（#103 P0 事故护栏，见 §10.1 ⑤） |
 | **新增（本票）** | `docs/specs/0010-ci-guard-selfcheck.md` | 本规范（自带范围声明 / AC / 自守边界 / 回滚路径 / 行号易腐注） |
 | **改（本票）** | `docs/specs/0010-ci-guard-selfcheck.md` §8.1 / §8.3 / §10.1 / §7（AC）/ §13（R10） | 回填 trail 自举实测（run id / 判据原文，§8.3）；新增 §10.1 P0 事故归档 + 静态护栏说明；AC1/AC2/AC5 更新为实测结论；新增 R10 |
+| **改（v1.6 / #116 规范轮）** | `docs/specs/0010-ci-guard-selfcheck.md` | ① 头部状态追加 **v1.6** 段（含措辞红线）；② §3.1 Out 更新触发面处置与票号；③ §6.2.1 增**第三类：触发面** + 封闭性论证 + 「范围澄清」（#116 不覆盖 A25 的证据）；④ 新增 **§8.4**（#116 可执行交付规范：方案与组合边界 / AC116-1–12 / HC-1–10 / 判定口径 / 四段式取证 / 残留 R-A·R-B·R-C / 可否决点 1 / 时序与行号易腐注）；⑤ §9 新增 **B13** + 一句话更新；⑥ §9.1 边界② 拆为 (2a)/(2b)；⑦ §13 **R9 改写** + 新增 **R11–R13**；⑧ §16 更新 follow-up 票号 |
+| **不改（本轮）** | `.github/workflows/guard-selfcheck.yml` | 本轮**只写规范**；#116 的新断言 step 与其四段式线上取证由 **#116 的 build PR** 承担（§8.4 / §16） |
 | **不改** | `.github/workflows/ci.yml` | `changes` 判据（`filters.image` 条目集合）与 `image-guard` 契约断言 step 一字不动（AC3） |
 | **不改** | `.github/workflows/ci-gate.yml` / `qodana_code_quality.yml` | 无 |
 | **改（D3，仅 1 行）** | `docs/specs/0009-ci-required-status-gate.md` §10 R4 | 追加**一行回指**：本项已由 `0010` 落地（issue #103 / PR #111）。**只此一行，不动 0009 其它段落** |
@@ -521,6 +663,8 @@ trail PR **#115** 按惯例**关闭而不合并**（`state = CLOSED`、`mergedAt
 2. **命题独立**：本检查是**新增的独立 artifact**（新 workflow + 新判定语义 + 新自守边界），值得**自带的范围声明 / AC / 自守边界 / 回滚**章节（0008 §13 / 0009 §13 亦声明「另开独立 build 票」）。
 3. **可回溯**：0010 以「承接 0008 §10 R2 / 0009 §10 R4」的开头显式登记依赖，不丢失到 0008 的引用链。
 
+> **v1.6 追加（为什么不另起 `0011-*`）**：#116 与 #103 的 P0 护栏（§10.1）**同属一个 artifact**（`.github/workflows/guard-selfcheck.yml`）的加固子票，且本仓已有**先例** —— #103 的护栏与其 trail 实证即落成 0010 内的 §10.1 / §10.2（而非另起新号）。故 #116 亦落为 0010 内新增章节 **§8.4**，并同步改写 §6.2.1 / §9 / §13 / §16。**若主理人裁定须独立成篇**，建议文件名 `docs/specs/0011-ci-guard-trigger-surface-hardening.md`（并把 §8.4 整体迁出、在 0010 留一行回指）；本版按「先更新 0010」的默认执行。
+
 ## 13. 风险与残留未知
 
 | 编号 | 项 | 分级 | 处置 |
@@ -532,9 +676,14 @@ trail PR **#115** 按惯例**关闭而不合并**（`state = CLOSED`、`mergedAt
 | **R5** | **并行 API 抖动的假红**：`gh api` 遇瞬时错误 ⇒ 本检查 fail-closed（读不到即红） | `non-blocking` | 本票**有意 fail-closed**（守门宁严勿松）；失败信息含 `api_err` 便于区分 404 / 瞬时错误；重跑即可清 |
 | **R6** | **任务卡 1.5 与实测不一致**：卡记 required=`[]`，实测 required=`[CI Gate]`（E1） | 信息 | 本票**不涉 required**，不影响交付；已在 §4.2 E1 登记，并**上报主理人** |
 | **R7** | **依赖 `pyyaml`**：workflow 内**显式** `actions/setup-python@v5`（固定 `python-version: "3.12"`）+ `pip install --quiet "pyyaml==6.0.3"`（runner 网络依赖） | `non-blocking` | **已消除隐式依赖**（不再依赖 runner 自带 PyYAML 这一未声明假设）；`pyyaml` 为纯 Python 小包、成熟稳定；固定版本以保确定性；若安装失败 ⇒ 显式噪声（与「删行必红」的混淆源已由三段式 trail 的正向绿分支排除，§8.3） |
-| **R8** | **威胁模型边界（D1-B，第 4 轮收窄）**：本检查（静态）闭合面 = **§6.2.1 的封闭字段集合（执行性 + 输出接线）内**的守门链削弱一律红（**不**是全称「静态上可见的守门链削弱一律红」——该全称表述已被 X1–X4 证伪）；**仅运行期才可判定的失效**（如过滤语义使 `filters.image` 恒不匹配）、**触发面**（A25）、**架构 / 配置面**（ruleset `workflows` rule / `image-guard` 迁 `pull_request_target`）**不在本票闭合面内** | `non-blocking` | 如实登记（§9.1 ①②③）：运行期失效 ⇒ **另立票**；触发面 ⇒ **另立票**（R9）；架构级解法 ⇒ 后续加固候选，本票**只登记、不实现** |
-| **R9** | **触发面削弱（A25）**：`on.pull_request.paths` 排除 `.github/workflows/ci.yml` ⇒ 改 `ci.yml` 的 PR 不触发 `ci.yml` ⇒ `image-guard` 零覆盖；本检查判**绿**（**属已裁决的 B 类边界，非假绿**） | `non-blocking`（**已裁决**） | **主理人裁决：B 类边界 + 另立票**（理由见 §9.1 边界②）。**另立票**内容 = 「触发 / 配置面加固」（与 ruleset `workflows` rule 同轴），**本票不实现**；已在 §3.1 / §9.1 / §16 登记 |
+| **R8** | **威胁模型边界（D1-B，第 4 轮收窄；v1.6 微调）**：本检查（静态）闭合面 = **§6.2.1 的封闭字段集合（执行性 + 输出接线 + 触发面）内**的削弱一律红（**不**是全称「静态上可见的削弱一律红」——该全称表述已被 X1–X4 证伪）；**仅运行期才可判定的失效**（如过滤语义使 `filters.image` 恒不匹配）、**`ci.yml` 的触发面（A25）**、**架构 / 配置面**（ruleset `workflows` rule / `image-guard` 迁 `pull_request_target`）**仍不在闭合面内**（其中「本检查自身触发面」已由 #116 纳入，见 B13 / §8.4 / R9 (2a)） | `non-blocking` | 如实登记（§9.1 ①②③）：运行期失效 ⇒ **另立票**；`ci.yml` 触发面 ⇒ **另立票**（R9 (2b)，#119）；架构级解法 ⇒ 后续加固候选，本票**只登记、不实现** |
+| **R9** | **触发面削弱（分两侧，v1.6 改写；两侧判据主体是不同文件，不可互相代偿）**：**(2a) 本检查自身触发面** —— 判据主体 = head 侧 `guard-selfcheck.yml` 的 `on.pull_request_target`；被加 `paths` / `paths-ignore` / `branches` / `branches-ignore`，或 `types` 不含默认三型 ⇒ 被过滤掉的 PR 上本检查**根本不产生 run**（与 §10.1 ①「workflow Invalid ⇒ 从未运行」同型）；**(2b) `ci.yml` 触发面（A25）** —— 判据主体 = `ci.yml` 的 `on.pull_request`；`paths` 正向过滤排除 `.github/workflows/ci.yml` ⇒ 改 `ci.yml` 的 PR 不触发 `ci.yml` ⇒ `image-guard` 零覆盖；本检查判**绿**（**属已裁决的 B 类边界，非假绿**） | `non-blocking`（**已裁决**） | **(2a) 已由 #116 闭合「PR 阶段报红」**：新断言 step（**§8.4**，四键 deny-list + `types` 下界，读 head 侧 `SELF_PATH`）+ 自守边界 **B13**；**残留 = R-A（非 required ⇒ 带红仍可合入，ruleset 实测 required 仅 `CI Gate`）** ⇒ **不声称「阻止生效」**；**时态**：本 (2a) 为**规范态**，指 #116 build PR 落地取证后（见 §8.4 头「时态声明」）；**可否决点 1**：`branches` / `branches-ignore` 可缩回（§8.4.7），届时登记为新 B 类边界。** (2b) 维持「B 类边界 + 另立票」，#116 不覆盖**：#116 的新断言**不读** `ci.yml` 的 `on` 块；且 `ci.yml` 现基线已含合法 `paths-ignore: ["docs/**","**/*.md","LICENSE",".gitignore"]` ⇒ 套用四键 deny-list 会令**当前 `main` 恒红** ⇒ 该扩展在**先设计例外白名单**之前不可行 ⇒ 归 **#119（架构 / 配置面）或另立 follow-up 票**，本规范不实现；已在 §3.1 / §6.2.1 末 / §9.1 / §16 登记 |
 | **R10** | **workflow 文件被判 Invalid ⇒ 检查静默零覆盖**（#103 P0 事故的**类别**）：`run:` 正文内出现 GitHub 表达式字面量（形如「`$` + 双花括号」）⇒ GitHub 对其求值、非法即令**整份 workflow 无效、永不运行**（run 全为 `push`、`name`=文件路径、无 job、`conclusion=failure`）⇒ 本检查**对所有 PR 零覆盖**（比假绿更隐蔽：连 `pull_request_target` run 都不产生） | **已机制化**（本票 Part A 新增静态护栏） | **新 step**「Assert no GitHub expression inside workflow run bodies」机检本仓全部 workflow 的 `run` 正文（fail-closed：API 失败 / 空目录 / YAML 坏 ⇒ 红）；6/6 本地自测通过（§10.1 ⑦）。**覆盖边界（显式登记）**：本护栏**只**覆盖 `run` 正文；**其它会被 GitHub 插值的字段**（`name` / `env` 的值 / `if` / `with` 等）中的非法表达式**不在其范围内**，**仍可致 workflow 被判 Invalid** ⇒ 本护栏**不声称**「整类 workflow Invalid 已闭合」。事故归档 / 根因 / **方法论缺口（无一轮验证模拟 GitHub 侧表达式插值 ⇒「本地能跑通」≠「GitHub 能跑」）** 见 **§10.1** |
+| **R11**（= R-A） | **#116 残留 R-A**：削弱 PR 拿到**红色** Guard Self-Check，但 Guard Self-Check **当前不是 required**（实测 required 名单只有 `CI Gate`）⇒ **削弱 PR 仍可带红被合入** | `non-blocking`（**登记残留**） | **不声称「阻止生效」**；「阻止生效」一侧归 **#119 / 另立 follow-up 票**（§8.4.6）。若日后 #104 后继票把本检查纳入 required ⇒ 须**同时**设计显式、人工可核的**逃生舱**（§10 第 4 条），且按 §8.4.7「今后永远不得加任何触发过滤」的口径，**纳入 required 时才须配逃生舱** |
+| **R12**（= R-B） | **#116 残留 R-B**：「合并后删掉 / 改坏这条触发面断言」= **§9 B2 的结构性下限**（任何 CI 都无法自保「自己的定义被合并掉」） | `non-blocking`（**登记残留**） | **不得声称闭合 B2**；由 review 兜底（B2 既有处置） |
+| **R13**（= R-C） | **#116 残留 R-C**：`types` 的 required 语义（check 缺失 vs Pending）**未实测且官方无据**（官方 skip 归因表仅 path / branch / commit message 三种） | `non-blocking`（**由 blocking 降级**） | **不作为本票任何判据**。降级依据：本票范围不含 required ⇒ 不产生实测样本 ⇒ 对本决策无信息价值；实测须真人临时加入 required，有**全局副作用**（所有 PR 被一条未经验证的新 required 卡住）（§8.4.6 补充） |
+
+> **编号冲突脚注（v1.6 新增，防误读）**：issue #116 正文把「把 `types` 改成 `[labeled]` ⇒ 本检查不再触发」称作「#103 审查项 A25」；而本规范 §8.2 打桩表的 **A25** 指「`ci.yml` 的 `on.pull_request` 加 `paths`」（= 本 R9 的 **(2b)**）。**二者编号冲突、指代不同对象**。本规范（含 R9 / §9.1 边界② / §16）中的 **A25 一律取后者**；**不得**据 issue #116 正文的 "A25" 字样判定 (2b) 已被 #116 覆盖。
 
 **blocking 未知点：0。**
 
@@ -564,7 +713,9 @@ trail PR **#115** 按惯例**关闭而不合并**（`state = CLOSED`、`mergedAt
 | 把本检查设为 required / 改 ruleset `23927156` | **#104（真人执行）** |
 | `docs/architecture.md` 规范索引同步 | **#105** |
 | 三件套 `paths-ignore` 治理（C4） | 0009 备选，**不做** |
-| **触发面削弱**（`on.pull_request.paths` 排除 `ci.yml`，A25；含 ruleset `workflows` rule 类「触发 / 配置面」加固） | **另立票**（与 ruleset `workflows` rule 同轴）；本票**登记为 B 类边界、不实现**（§9.1 边界② / §13 R9） |
+| **本检查自身触发面加固**（`guard-selfcheck.yml` 的 `on.pull_request_target` 过滤键） | **#116 本规范已给出交付规范**（§8.4：AC116-1 – AC116-12 / HC-1 – HC-10 / 四段式取证）；**实现与取证由 #116 的 build PR 承担**（本轮只写规范，不改 workflow） |
+| **`ci.yml` 触发面削弱（A25）**（`on.pull_request.paths` 排除 `ci.yml`；含 ruleset `workflows` rule 类「触发 / 配置面」加固） | **#116 不覆盖**（证据：§6.2.1 末「范围澄清」——`ci.yml` 现基线已含合法 `paths-ignore`，套用四键 deny-list 会令 `main` 恒红）；归 **#119（架构 / 配置面）或另立 follow-up 票**；本规范**登记为 B 类边界、不实现**（§9.1 边界② / §13 R9）。**票号弹性说明**：#119 实测标题为「架构级消除 paths-filter 读 head 检出——ruleset `workflows` rule 或 image-guard 迁 `pull_request_target`」，与本项所需「**`ci.yml` 触发面例外白名单设计**」**题面不同** ⇒ 是否开新票属**主理人 / 用户偏好**，本规范**不代决**，保留「#119 **或**另立 follow-up 票」的弹性写法 |
+| 把本检查纳入 required（以闭合 §8.4.6 **R-A**「带红仍可合入」残留） | **另立票**（#104 已 CLOSED，其后继票）；须**同时**设计显式、人工可核的**逃生舱**（§10 第 4 条 / §13 R11） |
 | ruleset `workflows` rule 加固 | 可选未来项（需 admin），**本票不做** |
 | 任何 Java 源码 / `pom.xml` / `Dockerfile` / `docker-compose.yml` / `core-contracts` 改动 | **禁止**（命中即中止并上报） |
 | 顺手「修」0008 / 0009 口径或索引 | **禁止**（撞车 #100 步4 / #104 / #105） |
