@@ -15,3 +15,4 @@ jobs:
       - name: Always-run required gate
         run: |
           echo "required gate: always reports"
+          # trail 取证注入（#114 阶段②）：${{ steps.<id>.outputs.<key> }} —— #103 事故的原始形态
