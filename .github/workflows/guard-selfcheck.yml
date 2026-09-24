@@ -26,6 +26,15 @@
 #   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
 #
 # 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
+#
+# 【硬约束：#103 P0 事故护栏】本文件任何 step 的 `run:` 正文内**不得出现** GitHub 表达式字面量
+#   （形如 `$` + 双花括号）。理由：GitHub 会对 `run:` 正文做**表达式插值**后才交给 shell，且
+#   **不认注释语法** —— 正文里任何 `$` + 双花括号 序列（哪怕写在 Python / shell 注释里）都会被
+#   当作 GitHub 表达式求值；表达式非法 ⇒ **整份 workflow 文件被判 Invalid、永不运行**（#103 期间
+#   本文件即因此整份被判 Invalid、本检查从未运行过一次；GitHub 报错为 `Unexpected symbol: '.outputs.'`；
+#   修复见 PR #113 / 合并 commit a141e8d）。需要插值的量一律经 `env:` 传入。
+#   本约束由本文件内 step「Assert no GitHub expression inside workflow run bodies」机检（fail-closed），
+#   并另有跨 workflow 的同口径本地 lint（`.workbuddy/lint_run_expr.py`）。规范记录见 0010 §10.1 / §13 R10。
 name: Guard Self-Check
 
 on:
@@ -59,6 +68,152 @@ jobs:
 
       - name: Install PyYAML
         run: pip install --quiet "pyyaml==6.0.3"
+
+      # #103 P0 事故护栏：静态机检「run 正文内不得出现 GitHub 表达式字面量」。
+      # 与既有设计一致：经 gh api REST 读 **head 侧** `.github/workflows/` 原文，**不 checkout / 不执行** PR 代码。
+      # fail-closed：API 失败 / 目录列举为空 / 文件 YAML 解析失败 ⇒ 一律报红（宁严勿松，不静默通过）。
+      - name: Assert no GitHub expression inside workflow run bodies
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          import yaml
+
+          REPO = os.environ["REPO"]
+          HEAD = os.environ["PR_HEAD_SHA"]
+          WF_DIR = ".github/workflows"
+
+          # 目标标记**拆开构造**（"$" + "{{"），确保本脚本自身的 run 正文内**不出现**该字面量
+          # —— 否则本护栏会把本文件again弄成 Invalid（与 #103 事故同形，见规范 0010 §10.1）。
+          MARK = "$" + "{{"
+          API_VERSION = "X-GitHub-Api-Version: 2022-11-28"
+
+
+          def gh_api(args):
+              """调用 gh api，返回 (ok, stdout, err)（沿用本文件 api_raw 同款调用风格）。"""
+              proc = subprocess.run(
+                  ["gh", "api"] + args,
+                  capture_output=True,
+                  text=True,
+              )
+              if proc.returncode == 0:
+                  return True, proc.stdout, ""
+              return False, "", (proc.stderr or "").strip()
+
+
+          def raw(path, ref):
+              """经 GitHub REST API 读指定 ref 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
+              return gh_api([
+                  "-H", "Accept: application/vnd.github.raw",
+                  "-H", API_VERSION,
+                  "repos/{}/contents/{}?ref={}".format(REPO, path, ref),
+              ])
+
+
+          fail = []
+
+          # (1) 列举 head 侧 .github/workflows/ 下的全部 .yml / .yaml（fail-closed：失败或空 ⇒ 红）。
+          ok, listing, err = gh_api([
+              "-H", API_VERSION,
+              "repos/{}/contents/{}?ref={}".format(REPO, WF_DIR, HEAD),
+          ])
+          entries = []
+          if not ok:
+              fail.append(
+                  "could not enumerate {} at head {}; api_err={}".format(WF_DIR, HEAD, err)
+              )
+          else:
+              try:
+                  data = json.loads(listing)
+              except ValueError as e:
+                  fail.append(
+                      "listing {} at head {} is not valid JSON: {}".format(WF_DIR, HEAD, e)
+                  )
+                  data = None
+              if isinstance(data, list):
+                  entries = [
+                      item for item in data
+                      if isinstance(item, dict)
+                      and item.get("type") == "file"
+                      and isinstance(item.get("name"), str)
+                      and item["name"].endswith((".yml", ".yaml"))
+                      and isinstance(item.get("path"), str)
+                  ]
+              elif data is not None:
+                  fail.append(
+                      "listing {} at head {} is not a directory listing".format(WF_DIR, HEAD)
+                  )
+
+          if not entries:
+              fail.append(
+                  "no workflow files enumerated under {} at head {} (fail-closed)".format(
+                      WF_DIR, HEAD
+                  )
+              )
+
+          # (2) 逐文件：REST 读原文 → yaml.safe_load → **仅**扫描 jobs.*.steps[*].run 正文。
+          for item in entries:
+              path = item["path"]
+              ok, text, err = raw(path, HEAD)
+              if not ok:
+                  fail.append(
+                      "workflow {} not found at head {}; api_err={}".format(path, HEAD, err)
+                  )
+                  continue
+              try:
+                  doc = yaml.safe_load(text)
+              except yaml.YAMLError as e:
+                  fail.append("workflow {} YAML invalid at head {}: {}".format(path, HEAD, e))
+                  continue
+              jobs = doc.get("jobs") if isinstance(doc, dict) else None
+              if not isinstance(jobs, dict):
+                  fail.append(
+                      "workflow {} has no recognizable 'jobs' mapping at head {}".format(
+                          path, HEAD
+                      )
+                  )
+                  continue
+              for jk, jv in jobs.items():
+                  if not isinstance(jv, dict):
+                      continue
+                  steps = jv.get("steps")
+                  if not isinstance(steps, list):
+                      continue
+                  for si, step in enumerate(steps):
+                      if not isinstance(step, dict):
+                          continue
+                      run = step.get("run")
+                      if not isinstance(run, str) or MARK not in run:
+                          continue
+                      step_name = step.get("name") or step.get("uses") or "step#{}".format(si)
+                      for ln, line_text in enumerate(run.split("\n"), start=1):
+                          if MARK in line_text:
+                              fail.append(
+                                  "{} [job={}] step {!r}: GitHub expression literal in run body "
+                                  "at run-body line {} :: {}".format(
+                                      path, jk, step_name, ln, line_text.strip()[:140]
+                                  )
+                              )
+
+          if fail:
+              print("::error title=Guard Self-Check FAILED::run body contains a GitHub expression literal")
+              for item in fail:
+                  print("::error::{}".format(item))
+              print("Guard Self-Check FAILED (run-body expression lint):")
+              for item in fail:
+                  print(" - " + item)
+              sys.exit(1)
+
+          print("Guard Self-Check: no GitHub expression inside workflow run bodies")
+          PY
 
       - name: Assert guard self-coverage intact (base-anchored, no PR checkout)
         env:
