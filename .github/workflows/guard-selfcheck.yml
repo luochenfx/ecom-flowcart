@@ -94,7 +94,7 @@ jobs:
           _BRACKET_INDEX = re.compile(r"\[\s*['\"]([A-Za-z0-9_-]+)['\"]\s*\]")
           # 门禁消费点：任一 job 的 `if` 表达式里引用 `needs.<job>.outputs.<key>`。
           NEEDS_OUTPUT_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
-          # 产出步骤：job 的 `outputs.<key>` 值形如 `${{ steps.<id>.outputs.<key> }}`。
+          # 产出步骤：job 的 `outputs.<key>` 值形如 `steps.<id>.outputs.<key>` 的双花括号引用。
           STEP_OUTPUT_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
 
           # ---- D1（第 4 轮）：可枚举的**封闭字段集合**（「守门链节点不削弱」的判据面）----
@@ -255,7 +255,7 @@ jobs:
               锚定面 = **消费链语义结构**（而非「首个同名 action」，也非 job / step 名或行号）：
                 1) 若某 job 的 `if` 引用 `needs.<J>.outputs.<K>` ⇒「被消费的 job 输出」为门禁消费点，
                    引用它的 job 即**消费节点**（本仓 = `image-guard`）；
-                2) 该输出由 `<J>.outputs.<K> = ${{ steps.<ID>.outputs.* }}` 产出 ⇒ 产出步骤 id = <ID>；
+                2) 该输出由 `<J>.outputs.<K>` 经双花括号引用 `steps.<ID>.outputs.*` 产出 ⇒ 产出步骤 id = <ID>；
                 3) 该产出步骤须为 `uses: dorny/paths-filter*`，取其 `with.filters` → `image` 列表。
 
               返回 list[dict]（每个门禁链一项）：
