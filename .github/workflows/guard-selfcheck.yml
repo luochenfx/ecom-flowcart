@@ -33,8 +33,9 @@
 #   当作 GitHub 表达式求值；表达式非法 ⇒ **整份 workflow 文件被判 Invalid、永不运行**（#103 期间
 #   本文件即因此整份被判 Invalid、本检查从未运行过一次；GitHub 报错为 `Unexpected symbol: '.outputs.'`；
 #   修复见 PR #113 / 合并 commit a141e8d）。需要插值的量一律经 `env:` 传入。
-#   本约束由本文件内 step「Assert no GitHub expression inside workflow run bodies」机检（fail-closed），
-#   并另有跨 workflow 的同口径本地 lint（`.workbuddy/lint_run_expr.py`）。规范记录见 0010 §10.1 / §13 R10。
+#   本约束由本文件内 step「Assert no GitHub expression inside workflow run bodies」机检（fail-closed）；
+#   规则口径 = **有意的「全禁」策略**（连合法 run 内插值也报红，不得以「误红」为由放宽），详见该 step 上方注释。
+#   规范记录见 0010 §10.1 / §13 R10。
 name: Guard Self-Check
 
 on:
@@ -72,6 +73,16 @@ jobs:
       # #103 P0 事故护栏：静态机检「run 正文内不得出现 GitHub 表达式字面量」。
       # 与既有设计一致：经 gh api REST 读 **head 侧** `.github/workflows/` 原文，**不 checkout / 不执行** PR 代码。
       # fail-closed：API 失败 / 目录列举为空 / 文件 YAML 解析失败 ⇒ 一律报红（宁严勿松，不静默通过）。
+      #
+      # 【规则口径：有意策略，非缺陷】本 step 对 `run` 正文取「全禁」口径 —— 要求 `run` 正文内
+      #   不出现任何 GitHub 表达式字面量（形如「`$` + 双花括号」），**连合法的 run 内插值也一并报红**。
+      #   这是**有意**的保守策略，**不是缺陷**；**不得**日后以「合法表达式被误红」为由放宽。
+      #   理由：GitHub 会对 `run` 正文做表达式插值后才交给 shell，而**本地无法可靠复现 GitHub 侧
+      #   表达式解析器**（无法判定任意表达式是否合法）⇒ 保守侧优先防「整份 workflow 被判 Invalid ⇒
+      #   静默零覆盖」。**替代写法 = 经 `env:` 传值**（本仓既有惯例）；请照此改写，而**不是**放宽本规则。
+      # 【覆盖边界（显式登记）】本 step **只**覆盖 `run` 正文；**其它会被 GitHub 插值的字段**
+      #   （`name` / `env` 的值 / `if` / `with` 等）中的非法表达式**不在本 step 范围内**，
+      #   **仍可致整份 workflow Invalid 而本 step 不报红**。
       - name: Assert no GitHub expression inside workflow run bodies
         env:
           GH_TOKEN: ${{ github.token }}

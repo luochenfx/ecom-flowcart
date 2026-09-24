@@ -222,7 +222,7 @@
 
 `pull_request_target` 的 workflow 定义**读自 base**（E4）⇒ **PR-1 创建时该 workflow 尚不在 base** ⇒ PR-1 自身**不会**触发本检查 ⇒ **trail 自举实测必须在 PR-1 合并入 `main` 之后**、另开 `test/103-*` 分支进行。这是本票的**结构性时序依赖**。
 
-**已完成（回填）**：workflow 合并入 base（PR #111 → 修复版 `a141e8d`）后，已按 §8.3 三段式执行**线上 trail**，三段结论**均符合预期**（① 绿 / ② 红 / ③ 红，见 §8.3 实测表）⇒ AC2 线上判据**已闭合**。
+**已完成（回填）**：workflow 已合并入 base（**引入**守门自检检查本体 = PR #111 / 合并 commit `a32d3de`；随后**修复**其 `run` 正文非法表达式 = PR #113 / 合并 commit `a141e8d`）后，已按 §8.3 三段式执行**线上 trail**，三段结论**均符合预期**（① 绿 / ② 红 / ③ 红，见 §8.3 实测表）⇒ AC2 线上判据**已闭合**。
 
 ### 8.2 本地自举单测（已执行，方法 + 结果）
 
@@ -389,7 +389,7 @@
 
 > 本节为**已发生事故的如实归档**（非计划），是本规范「为何必须新增一条**静态护栏**」的直接来源。为与 ⑤ 的护栏口径一致，本节凡 GitHub 表达式一律以「`$` + 双花括号」转写，不写原始字面量。
 
-**① 事故现象**：已合并的 `.github/workflows/guard-selfcheck.yml` 一度是**无效 workflow 文件** ⇒ 该检查**从未运行过一次**。GitHub 侧表现为：本 workflow 的 6 次运行均为 **`push`** 事件、运行的 `name` 显示为**文件路径**（而非 `Guard Self-Check`）、**无 job**、`conclusion=failure`。该 failure **不是**判定逻辑报红，而是**文件被判 Invalid、根本未实例化任何 job** ⇒ 本检查在此期间的**所有 PR 上均零覆盖**（比假绿更隐蔽：连 `pull_request_target` run 都从未产生）。
+**① 事故现象**：已合并的 `.github/workflows/guard-selfcheck.yml` 一度是**无效 workflow 文件** ⇒ 该检查**从未运行过一次**。GitHub 侧表现为（**事故窗口内的快照**）：本 workflow 的运行**均为 `push`** 事件（该窗口内共 6 次）、运行的 `name` 显示为**文件路径**（而非 `Guard Self-Check`）、**无 job**、`conclusion=failure`。该 failure **不是**判定逻辑报红，而是**文件被判 Invalid、根本未实例化任何 job** ⇒ 本检查在此期间的**所有 PR 上均零覆盖**（比假绿更隐蔽：连 `pull_request_target` run 都从未产生）。**现状计数（本次回填复算）**：截至本次回填，`guard-selfcheck` workflow 共 **13** 次运行 = **9 次 `push`**（`name` 显示为文件路径 `.github/workflows/guard-selfcheck.yml`、无任何 job、`conclusion=failure`）+ **4 次 `pull_request_target`**（`name=Guard Self-Check`）；修复合并后 `push` 事件**不再产生**此类幽灵运行。
 
 **② 根因**：GitHub 会对 step 的 `run:` 正文做**表达式插值**后才交给 shell，且**不认 shell / Python 注释语法**。正文里任何「`$` + 双花括号」序列（哪怕写在注释里）都会被当作 GitHub 表达式求值；表达式非法 ⇒ **整份 workflow 文件被判 Invalid、永不运行**。本次事故是两处注释里写了 `steps.<id>.outputs.<key>` 这类**非法表达式**（`.` 后跟 `<` 触发 `Unexpected symbol: '.outputs.'`）。
 
@@ -403,7 +403,7 @@ Located at position 11 within expression: steps.<id>.outputs.<key>
 
 **④ 修复**：PR **#113**（commit `66ac8f7`）移除 `run:` 正文内的非法表达式字面量 → 合并 commit **`a141e8d`**（现 `main` HEAD）。
 
-**⑤ 新增的静态约束（本票 Part A 护栏）**：`guard-selfcheck.yml`（及本仓全部 workflow）的 `run:` 正文内**不得出现** GitHub 表达式字面量（形如「`$` + 双花括号」）；需要插值的量一律经 `env:` 传入。该约束由本文件内**新 step**「Assert no GitHub expression inside workflow run bodies」**机检**，规则与 fail-closed 行为：
+**⑤ 新增的静态约束（本票 Part A 护栏）**：`guard-selfcheck.yml`（及本仓全部 workflow）的 `run:` 正文内**不得出现** GitHub 表达式字面量（形如「`$` + 双花括号」）；需要插值的量一律经 `env:` 传入。**规则口径 = 有意的「全禁」策略（非缺陷）**：连合法的 `run` 内插值也一并报红 —— 因本地**无法可靠复现 GitHub 侧表达式解析器**（无法判定任意表达式是否合法），故保守侧优先防「整份 workflow 被判 Invalid ⇒ 静默零覆盖」；**替代写法 = 经 `env:` 传值**，而**不是**放宽本规则（该策略不得日后以「误红」为由收窄）。该约束由本文件内**新 step**「Assert no GitHub expression inside workflow run bodies」**机检**，规则与 fail-closed 行为：
 
 1. 经 `gh api "repos/{REPO}/contents/.github/workflows?ref={HEAD}"` **列举 head 侧**全部 `.yml` / `.yaml`；
 2. 逐文件经 `gh api -H "Accept: application/vnd.github.raw"` 取**原文**（**不 checkout PR**、不执行 PR 代码，与既有设计一致）；
@@ -411,9 +411,9 @@ Located at position 11 within expression: steps.<id>.outputs.<key>
 4. 命中 ⇒ 打印 `::error::` 并列出 **文件 / job / step 名 / run 内行号 / 该行原文**，`exit 1`；
 5. **fail-closed**：API 失败 / 目录列举为空 / 文件 YAML 解析失败 / 无 `jobs` 映射 ⇒ 一律报红并给出可定位信息；全绿时打印 `Guard Self-Check: no GitHub expression inside workflow run bodies`。
 
-另配套一份跨 workflow 的**同口径本地 lint**（`.workbuddy/lint_run_expr.py`，退出码 0/1）。风险登记见 §13 **R10**。
+**覆盖边界（显式登记）**：本护栏**只**覆盖 `run` 正文；**其它会被 GitHub 插值的字段**（`name` / `env` 的**值** / `if` / `with` 等）中的非法表达式**不在本护栏范围内**，**仍可致整份 workflow 被判 Invalid 而本护栏不报红** ⇒ 本护栏**不声称**「整类 workflow Invalid 已闭合」（其闭合面**仅限 `run` 正文**）。护栏本体即 `guard-selfcheck.yml` 内的该 step（**仓库内自包含**，不依赖任何未纳库的本地辅助脚本）。风险登记见 §13 **R10**。
 
-**⑥ 事故为何能躲过 4 轮评审 + 终审（方法论缺口）**：全部验证手段都是 **PyYAML 解析** + **本地把内嵌 Python 当脚本跑**（§8.2 的等价打桩）—— **没有任何一轮模拟 GitHub 侧的表达式插值**。即 **「本地能跑通」≠「GitHub 能跑」**；评审把「脚本语义正确」误当作「workflow 文件合法」。**教训**：对 workflow 文件的验证必须覆盖 **GitHub 侧的解析 / 插值语义**——本票的静态护栏（⑤）与本地 lint 即为此缺口的补强。
+**⑥ 事故为何能躲过 4 轮评审 + 终审（方法论缺口）**：全部验证手段都是 **PyYAML 解析** + **本地把内嵌 Python 当脚本跑**（§8.2 的等价打桩）—— **没有任何一轮模拟 GitHub 侧的表达式插值**。即 **「本地能跑通」≠「GitHub 能跑」**；评审把「脚本语义正确」误当作「workflow 文件合法」。**教训**：对 workflow 文件的验证必须覆盖 **GitHub 侧的解析 / 插值语义**——本票的静态护栏（⑤）即为此缺口的补强。
 
 **⑦ 护栏本地自测（等效打桩，随本票执行）**：抽取新 step 的内嵌判定脚本，桩替换 `subprocess.run`（假 `gh`）后喂入 6 场景：① 真实仓（干净）⇒ 绿；② `run` 正文含字面量 ⇒ 红并给定位；③ 字面量仅在 `env:`（非 `run`）⇒ 绿（证只扫 run 正文）；④ 空目录 ⇒ 红（fail-closed）；⑤ YAML 坏 ⇒ 红（fail-closed）；⑥ 无 `jobs` 映射 ⇒ 红（fail-closed）。**6/6 通过**。
 
@@ -465,7 +465,7 @@ Located at position 11 within expression: steps.<id>.outputs.<key>
 | **R7** | **依赖 `pyyaml`**：workflow 内**显式** `actions/setup-python@v5`（固定 `python-version: "3.12"`）+ `pip install --quiet "pyyaml==6.0.3"`（runner 网络依赖） | `non-blocking` | **已消除隐式依赖**（不再依赖 runner 自带 PyYAML 这一未声明假设）；`pyyaml` 为纯 Python 小包、成熟稳定；固定版本以保确定性；若安装失败 ⇒ 显式噪声（与「删行必红」的混淆源已由三段式 trail 的正向绿分支排除，§8.3） |
 | **R8** | **威胁模型边界（D1-B，第 4 轮收窄）**：本检查（静态）闭合面 = **§6.2.1 的封闭字段集合（执行性 + 输出接线）内**的守门链削弱一律红（**不**是全称「静态上可见的守门链削弱一律红」——该全称表述已被 X1–X4 证伪）；**仅运行期才可判定的失效**（如过滤语义使 `filters.image` 恒不匹配）、**触发面**（A25）、**架构 / 配置面**（ruleset `workflows` rule / `image-guard` 迁 `pull_request_target`）**不在本票闭合面内** | `non-blocking` | 如实登记（§9.1 ①②③）：运行期失效 ⇒ **另立票**；触发面 ⇒ **另立票**（R9）；架构级解法 ⇒ 后续加固候选，本票**只登记、不实现** |
 | **R9** | **触发面削弱（A25）**：`on.pull_request.paths` 排除 `.github/workflows/ci.yml` ⇒ 改 `ci.yml` 的 PR 不触发 `ci.yml` ⇒ `image-guard` 零覆盖；本检查判**绿**（**属已裁决的 B 类边界，非假绿**） | `non-blocking`（**已裁决**） | **主理人裁决：B 类边界 + 另立票**（理由见 §9.1 边界②）。**另立票**内容 = 「触发 / 配置面加固」（与 ruleset `workflows` rule 同轴），**本票不实现**；已在 §3.1 / §9.1 / §16 登记 |
-| **R10** | **workflow 文件被判 Invalid ⇒ 检查静默零覆盖**（#103 P0 事故的**类别**）：`run:` 正文内出现 GitHub 表达式字面量（形如「`$` + 双花括号」）⇒ GitHub 对其求值、非法即令**整份 workflow 无效、永不运行**（run 全为 `push`、`name`=文件路径、无 job、`conclusion=failure`）⇒ 本检查**对所有 PR 零覆盖**（比假绿更隐蔽：连 `pull_request_target` run 都不产生） | **已机制化**（本票 Part A 新增静态护栏） | **新 step**「Assert no GitHub expression inside workflow run bodies」机检本仓全部 workflow 的 `run` 正文（fail-closed：API 失败 / 空目录 / YAML 坏 ⇒ 红）+ 同口径本地 lint（`.workbuddy/lint_run_expr.py`）；6/6 本地自测通过（§10.1 ⑦）。事故归档 / 根因 / **方法论缺口（无一轮验证模拟 GitHub 侧表达式插值 ⇒「本地能跑通」≠「GitHub 能跑」）** 见 **§10.1** |
+| **R10** | **workflow 文件被判 Invalid ⇒ 检查静默零覆盖**（#103 P0 事故的**类别**）：`run:` 正文内出现 GitHub 表达式字面量（形如「`$` + 双花括号」）⇒ GitHub 对其求值、非法即令**整份 workflow 无效、永不运行**（run 全为 `push`、`name`=文件路径、无 job、`conclusion=failure`）⇒ 本检查**对所有 PR 零覆盖**（比假绿更隐蔽：连 `pull_request_target` run 都不产生） | **已机制化**（本票 Part A 新增静态护栏） | **新 step**「Assert no GitHub expression inside workflow run bodies」机检本仓全部 workflow 的 `run` 正文（fail-closed：API 失败 / 空目录 / YAML 坏 ⇒ 红）；6/6 本地自测通过（§10.1 ⑦）。**覆盖边界（显式登记）**：本护栏**只**覆盖 `run` 正文；**其它会被 GitHub 插值的字段**（`name` / `env` 的值 / `if` / `with` 等）中的非法表达式**不在其范围内**，**仍可致 workflow 被判 Invalid** ⇒ 本护栏**不声称**「整类 workflow Invalid 已闭合」。事故归档 / 根因 / **方法论缺口（无一轮验证模拟 GitHub 侧表达式插值 ⇒「本地能跑通」≠「GitHub 能跑」）** 见 **§10.1** |
 
 **blocking 未知点：0。**
 
