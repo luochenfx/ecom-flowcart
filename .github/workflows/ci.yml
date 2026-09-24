@@ -14,7 +14,7 @@
 name: CI
 
 on:
-  push:
+  push: [unclosed
     branches:
       - main
     paths-ignore:
