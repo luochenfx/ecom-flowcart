@@ -1,0 +1,627 @@
+# 守门自守检查（issue #103）—— 覆盖 #94-① 登记的残余边界：
+# 「镜像守门不可自守『删除自己』」。
+#
+# 背景（规范 0008 §10 R2 ①）：ci.yml 的 image-guard 路径白名单由 dorny/paths-filter
+# 从**被测 PR 自身的检出**读取；某 PR 只要删掉白名单里的 `- '.github/workflows/ci.yml'`
+# 这一行，该 PR 自身就不再被 image-guard 覆盖 ⇒ 删除动作本体拿不到任何 CI 证据。
+#
+# 本检查的设计前提 —— 判定「不读被测 PR 自身的检出」：
+#   * 触发用 pull_request_target ⇒ 本 workflow 定义读自 base（默认分支），PR 无法篡改检查本体；
+#   * 全程不 actions/checkout、不执行任何 PR 代码，只经 GitHub REST API 读 head 侧文件做判定；
+#   * 判定锚定 = **base 侧守门链身份 + head 侧「不削弱」断言（封闭字段集合）**：
+#     - 由 **base 版** ci.yml（`github.event.pull_request.base.sha`，PR 不可篡改）解出「门禁链身份」：
+#       下游 job 的 `needs.<j>.outputs.<k>` → 被消费输出 → 产出 step id → 该 step 的 filters.image 基线集合；
+#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）——**判据 = 逐字段相等（封闭集合）**：
+#       **执行性字段**（产出 / 消费 job·step 的 `if` / `needs` / `strategy` / `continue-on-error` / `uses`，
+#       job 另含 `concurrency`）+ **输出接线**（产出 job `outputs.<k>` 逐键值、产出 step `with` 的非
+#       `filters` 键、产出 step `filters.image` ⊇ base ∪ 硬基线）；**消费节点完整性**：消费点
+#       `needs.<j>.outputs.<k>` 未被搬走、消费 job（`image-guard` 本体）仍在、其执行性字段与各 step
+#       执行性字段逐条与 base 相等；
+#     - **不按** 首个同名 action、**不按** job/step 名、**更不按** 行号（行号易腐，见 0008 §11「行号易腐」注）。
+#   设计要点：**信任 base 侧**（PR 改不动）作为锚，而非 head 侧自报的消费链 —— 据此闭合「把消费点搬到
+#   任意含基线的 job」（A5/A5p）、「给守门链加恒假 `if` 使运行期恒不执行」（A16/A17）、「改 / 删产出 job
+#   `outputs.<k>` 接线」（X1–X4）三类「静态结构完好、运行期覆盖已死」的假绿；第 3 轮起对称扩展到
+#   **消费节点**（A23/A24b/A24c/A27/A28/A30）；第 4 轮起判据升级为**可枚举的封闭字段集合**并补**封闭性
+#   论证**（见规范 §6.2），消除「逐属性打地鼠」。威胁模型边界见规范 §9 / §13。
+#   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
+#
+# 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
+name: Guard Self-Check
+
+on:
+  # pull_request_target：workflow 定义来自 base/默认分支（GITHUB_SHA=默认分支末次提交，
+  # GITHUB_REF=默认分支）⇒ PR 改不动本检查本体；且该事件属「可为 required check 产出
+  # 可评估 check」的合规事件集合（官方文档）。默认活动类型 = opened / synchronize / reopened。
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+# 最小权限：判定只经 `gh api .../contents/...?ref=<head_sha>` 读文件内容（需 contents: read）；
+# head_sha 取自事件 payload，不经任何 pull-requests API ⇒ 不收窄以外的多余授权。
+permissions:
+  contents: read
+
+concurrency:
+  group: guard-selfcheck-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  selfcheck:
+    name: Guard Self-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 显式获取判定依赖：消除「隐式依赖 runner 自带 python3 的 PyYAML」这一未声明假设
+      #（否则若某次镜像更新后 PyYAML 缺失 ⇒ import 崩 ⇒ 本检查恒红，且无法与「删行必红」区分）。
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install --quiet "pyyaml==6.0.3"
+
+      - name: Assert guard self-coverage intact (base-anchored, no PR checkout)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # base 侧 SHA：作为**可信锚**解出守门链身份（base 内容 PR 不可篡改）。
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          import yaml
+
+          REPO = os.environ["REPO"]
+          HEAD = os.environ["PR_HEAD_SHA"]
+          BASE = os.environ["PR_BASE_SHA"]
+
+          CI_PATH = ".github/workflows/ci.yml"
+          SELF_PATH = ".github/workflows/guard-selfcheck.yml"
+          # 硬基线：自守核心条目（下界）。与 base 侧解析出的 BASE_ENTRIES 合并为「必须 ⊆」的下界；
+          # 即使在 base 结构异常（解析失败 ⇒ 已 fail-closed）时，本集合仍作为兜底下界。
+          BASELINE_IMAGE_ENTRIES = {".github/workflows/ci.yml"}
+
+          # 引用 token：**兼容**点号与括号下标两种写法（GitHub 表达式两种皆合法）：
+          #   needs.changes.outputs.image  ≡  needs['changes'].outputs['image']
+          #   steps.filter.outputs.image   ≡  steps['filter'].outputs['image']
+          # 先经 _norm 把 ['x'] / ["x"] 归一到 .x，两个正则即可同时吃下标语法（修 A8 假红）。
+          _BRACKET_INDEX = re.compile(r"\[\s*['\"]([A-Za-z0-9_-]+)['\"]\s*\]")
+          # 门禁消费点：任一 job 的 `if` 表达式里引用 `needs.<job>.outputs.<key>`。
+          NEEDS_OUTPUT_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
+          # 产出步骤：job 的 `outputs.<key>` 值形如 `${{ steps.<id>.outputs.<key> }}`。
+          STEP_OUTPUT_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
+
+          # ---- D1（第 4 轮）：可枚举的**封闭字段集合**（「守门链节点不削弱」的判据面）----
+          # 判据从「逐属性打地鼠」（每轮补一个属性）升级为**封闭集合**：下述两类字段必须与 base
+          # **逐字段相等**。理由（封闭性论证见规范 §6.2）：只有这两类字段能改变「job/step 是否执行」
+          # 或「其输出值」，从而产生**静默零覆盖**——
+          #   * 执行性：任一被削弱都可能令该 job/step **恒不执行**（job 被 `if` 跳过 = 官方语义 Success，E5）
+          #     或**静默吞掉失败** ⇒ 输出为空 ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖。
+          #     - `needs` / `if`：跳过；`continue-on-error`：吞失败；`strategy`：空矩阵 ⇒ 零 job（Success）；
+          #     - `uses`：换成「成功但不产 output」的 action ⇒ 输出为空；
+          #     - `concurrency`：job 被取消 ⇒ 沿 `needs` 依赖链下游 skipped = Success。
+          #   * 输出接线：产出 job `outputs.<K>` 值 / 产出 step `with` 的非 `filters` 键
+          #     （`list-files` 会把 output 由 `'true'` 改为文件列表、`predicate-quantifier` 改变匹配语义
+          #      ⇒ 消费侧恒假）——由下方 `producer_outputs` / `producer_with_other` 承载。
+          # **集合外**字段（`run` 正文 / `env` / `permissions` / `timeout-minutes` / step 顺序 / `with` 的
+          # `filters` 之外的时序……）至多令 job **可见失败（红）**，不产生静默零覆盖 ⇒ **不纳入**（如实登记）。
+          JOB_EXEC_FIELDS = ("if", "needs", "strategy", "continue-on-error", "uses", "concurrency")
+          STEP_EXEC_FIELDS = ("if", "uses", "continue-on-error")
+
+
+          def _norm(value):
+              """规范化引用写法：把 ['x'] / ["x"] 归一到 .x（见上方 NEEDS_OUTPUT_REF 说明）。"""
+              return _BRACKET_INDEX.sub(r".\1", value) if isinstance(value, str) else ""
+
+
+          def _job_if_refs(job):
+              """返回该 job 的 `if` 中引用的 (job_key, output_key) 集合（下标语法已归一）。"""
+              if not isinstance(job, dict):
+                  return set()
+              return {
+                  (m.group(1), m.group(2))
+                  for m in NEEDS_OUTPUT_REF.finditer(_norm(str(job.get("if") or "")))
+              }
+
+
+          def _norm_ws(value):
+              """归一空白：折叠连续空白 + strip；`None` 透传（用于 `uses` / `continue-on-error` 等标量比较）。
+
+              **仅**归一空白，**不**做语义等价 ⇒ 空白重排 ⇒ 等价（绿）；语义变化 ⇒ 仍红。
+              """
+              if value is None:
+                  return None
+              s = value if isinstance(value, str) else str(value)
+              return re.sub(r"\s+", " ", s).strip()
+
+
+          def _norm_expr(value):
+              """归一**表达式**字段（`if`）：先做括号下标归一（`_norm`），再折叠空白。
+
+              ⇒ `needs['changes'].outputs['image']` ≡ `needs.changes.outputs.image`（下标写法等价，A8），
+              且空白重排等价（A33）；任何**语义变化**仍不等（红）。
+              """
+              if value is None:
+                  return None
+              s = value if isinstance(value, str) else str(value)
+              return re.sub(r"\s+", " ", _norm(s)).strip()
+
+
+          def _norm_needs(value):
+              """归一 `needs` 为集合口径（D1 (d3)）：`str` 与单元素 / 多元素 `list` 视为等价。
+
+              `None` ⇒ 空集 `()`；`str` ⇒ 单元素 tuple；`list` ⇒ 元素按字符串排序的 tuple；
+              其它类型 ⇒ `None`（与任何合法值都不等 ⇒ 红，fail-closed）。
+              """
+              if value is None:
+                  return ()
+              if isinstance(value, str):
+                  return (value,)
+              if isinstance(value, list):
+                  return tuple(sorted(str(x) for x in value))
+              return None
+
+
+          def _step_identity(step):
+              """step 的稳定身份（D1 (d4) 口径 (i)）：优先 `name`，无 `name` 时用 `uses` 兜底。"""
+              if not isinstance(step, dict):
+                  return None
+              name = step.get("name")
+              if isinstance(name, str) and name.strip():
+                  return "name:" + name
+              uses = step.get("uses")
+              if isinstance(uses, str) and uses.strip():
+                  return "uses:" + uses
+              return None
+
+
+          def _canon(value):
+              """递归规范化任意 YAML 值为**可比较规范形**（执行性字段逐字段相等用）。
+
+              - `None` ⇒ `None`；`bool` / `int` / `float` ⇒ 原样；
+              - `str` ⇒ 先括号下标归一（`_norm`）再折叠连续空白 + strip；
+              - `dict` ⇒ 键转字符串并**排序**（键序无关）；`list` ⇒ 保序递归；
+              - 其它 ⇒ `str(value)`。
+
+              ⇒ 键序 / 空白 / 下标写法的**等价重排**不假红（A8/A33），任何**内容变化**仍不等（红）。
+              """
+              if value is None:
+                  return None
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, (int, float)):
+                  return value
+              if isinstance(value, str):
+                  return re.sub(r"\s+", " ", _norm(value)).strip()
+              if isinstance(value, dict):
+                  return {
+                      str(k): _canon(v)
+                      for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+                  }
+              if isinstance(value, list):
+                  return [_canon(v) for v in value]
+              return str(value)
+
+
+          def _norm_field(field, value):
+              """按字段语义规范化（执行性字段逐字段比较的口径）：
+
+              `needs` 用**集合口径**（`str` ≡ 单元素 `list`）；`if` / `continue-on-error` 用**表达式口径**
+              （下标归一 + 空白折叠）；`uses` 用**标量口径**（折叠空白）；`strategy` / `concurrency`
+              用 `_canon`（递归规范形）。
+              """
+              if field == "needs":
+                  return _norm_needs(value)
+              if field in ("if", "continue-on-error"):
+                  return _norm_expr(value)
+              if field == "uses":
+                  return _norm_ws(value)
+              return _canon(value)
+
+
+          def _exec_sig(node, fields):
+              """取节点（job 或 step）在给定**执行性字段集合**上的归一签名（dict）；非映射 ⇒ `None`。"""
+              if not isinstance(node, dict):
+                  return None
+              return {f: _norm_field(f, node.get(f)) for f in fields}
+
+
+          def api_raw(path, ref):
+              """经 GitHub REST API 读指定 ref 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
+              proc = subprocess.run(
+                  [
+                      "gh", "api",
+                      "-H", "Accept: application/vnd.github.raw",
+                      "-H", "X-GitHub-Api-Version: 2022-11-28",
+                      "repos/{}/contents/{}?ref={}".format(REPO, path, ref),
+                  ],
+                  capture_output=True,
+                  text=True,
+              )
+              if proc.returncode == 0:
+                  return True, proc.stdout, ""
+              return False, "", (proc.stderr or "").strip()
+
+
+          def locate_base_chains(ci):
+              """由 **base 版** ci.yml 解出「守门链身份」（可信锚；base 内容 PR 不可篡改）。
+
+              锚定面 = **消费链语义结构**（而非「首个同名 action」，也非 job / step 名或行号）：
+                1) 若某 job 的 `if` 引用 `needs.<J>.outputs.<K>` ⇒「被消费的 job 输出」为门禁消费点，
+                   引用它的 job 即**消费节点**（本仓 = `image-guard`）；
+                2) 该输出由 `<J>.outputs.<K> = ${{ steps.<ID>.outputs.* }}` 产出 ⇒ 产出步骤 id = <ID>；
+                3) 该产出步骤须为 `uses: dorny/paths-filter*`，取其 `with.filters` → `image` 列表。
+
+              返回 list[dict]（每个门禁链一项）：
+                产出侧 = producer_job / output_key / step_id / step_uses / entries /
+                         **producer_exec**（产出 job 执行性签名）/
+                         **producer_outputs**（产出 job `outputs.<K>` 归一值，逐键）/
+                         **producer_step_exec**（产出 step 执行性签名）/
+                         **producer_with_other**（产出 step `with` 的非 `filters` 键归一值）；
+                消费侧 = consumers = [{job_key, **exec**（消费 job 执行性签名）,
+                         **step_execs**（各 step 身份 → 执行性签名）} ...]。
+
+              **D4 口径**：base 侧引用「产出非 dorny / 产出不可解」的无关 job **跳过**（base 是可信锚，
+              跳过无害），以免将来 base 新增此类 job 令本检查在**所有** PR 上恒红（潜伏恒红）。若跳过
+              全部候选后**无任何合法链** ⇒ 返回 None（fail-closed，不猜、不退回旧启发式）。
+              """
+              if not isinstance(ci, dict):
+                  return None
+              jobs = ci.get("jobs")
+              if not isinstance(jobs, dict):
+                  return None
+
+              # 收集 base 侧全部门禁消费点引用：(producer_job, output_key) -> {消费 job key}。
+              gating = {}
+              for consumer_key, job in jobs.items():
+                  for ref in _job_if_refs(job):
+                      gating.setdefault(ref, set()).add(consumer_key)
+              if not gating:
+                  return None
+
+              chains = []
+              for (job_key, out_key), consumer_keys in sorted(gating.items()):
+                  producer = jobs.get(job_key)
+                  if not isinstance(producer, dict):
+                      continue  # D4：产出 job 不可解 ⇒ 非门禁链 ⇒ 跳过
+                  outputs = producer.get("outputs")
+                  if not isinstance(outputs, dict):
+                      continue
+                  m = STEP_OUTPUT_REF.search(_norm(str(outputs.get(out_key) or "")))
+                  if not m:
+                      continue
+                  step_id = m.group(1)
+                  steps = producer.get("steps")
+                  if not isinstance(steps, list):
+                      continue
+                  matched = [
+                      s for s in steps
+                      if isinstance(s, dict) and str(s.get("id") or "") == step_id
+                  ]
+                  # 步骤缺失或 id 重复 ⇒ 结构有歧义 ⇒ 跳过（非门禁链）
+                  if len(matched) != 1:
+                      continue
+                  step = matched[0]
+                  uses = str(step.get("uses") or "")
+                  if not uses.startswith("dorny/paths-filter"):
+                      continue  # D4：产出非 dorny ⇒ 跳过（base 侧无关 job）
+                  raw = (step.get("with") or {}).get("filters")
+                  if not isinstance(raw, str):
+                      continue
+                  try:
+                      parsed = yaml.safe_load(raw)
+                  except yaml.YAMLError:
+                      continue
+                  if not isinstance(parsed, dict) or not isinstance(parsed.get("image"), list):
+                      continue
+
+                  # 消费节点完整性基线（D1 (d1)-(d5)）：记录每个消费 job 的 key + **执行性签名**
+                  # （`if` / `needs` / `strategy` / `continue-on-error` / `uses` / `concurrency`）
+                  # 与各 step 的「身份 → 执行性签名」映射。
+                  consumers = []
+                  for consumer_key in sorted(consumer_keys):
+                      cjob = jobs.get(consumer_key)
+                      if not isinstance(cjob, dict):
+                          continue
+                      csteps = cjob.get("steps")
+                      if not isinstance(csteps, list):
+                          continue
+                      step_execs = {}
+                      ambiguous = False
+                      for cstep in csteps:
+                          ident = _step_identity(cstep)
+                          if ident is None:
+                              continue
+                          if ident in step_execs:
+                              ambiguous = True
+                              break
+                          step_execs[ident] = _exec_sig(cstep, STEP_EXEC_FIELDS)
+                      if ambiguous:
+                          # 消费 job step 身份歧义 ⇒ 该消费节点不可解 ⇒ 跳过（base 可信锚，跳过无害）
+                          continue
+                      consumers.append({
+                          "job_key": consumer_key,
+                          "exec": _exec_sig(cjob, JOB_EXEC_FIELDS),
+                          "step_execs": step_execs,
+                      })
+                  if not consumers:
+                      continue
+
+                  # 产出侧**输出接线**基线（D1「输出接线」类）：
+                  #   * 产出 job `outputs.<K>`：base 的**每个**键归一后须在 head 相等（键缺失 / 值改 /
+                  #     改指其它 step ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖；闭合 X1/X2/X3/X4）；
+                  #   * 产出 step `with` 的**非 `filters` 键**（`filters` 由 (b) 下界断言单独处理）：
+                  #     `list-files` / `predicate-quantifier` 会改变 `image` 输出语义 ⇒ 逐键绑定。
+                  producer_outputs = {
+                      str(k): _norm_expr(v) for k, v in outputs.items()
+                  }
+                  step_with = step.get("with") if isinstance(step.get("with"), dict) else {}
+                  producer_with_other = {
+                      str(k): _canon(v)
+                      for k, v in step_with.items() if str(k) != "filters"
+                  }
+
+                  chains.append({
+                      "producer_job": job_key,
+                      "output_key": out_key,
+                      "step_id": step_id,
+                      "step_uses": uses,
+                      "entries": {str(x) for x in parsed["image"]},
+                      "producer_exec": _exec_sig(producer, JOB_EXEC_FIELDS),
+                      "producer_outputs": producer_outputs,
+                      "producer_step_exec": _exec_sig(step, STEP_EXEC_FIELDS),
+                      "producer_with_other": producer_with_other,
+                      "consumers": consumers,
+                  })
+              if not chains:
+                  return None
+              return chains
+
+
+          def assert_head_not_weakened(base_chains, head_ci):
+              """对 head 侧做「不削弱」断言（**D1 封闭集合：执行性 + 输出接线**）；返回失败信息 list。
+
+              **判据 = 逐字段相等（封闭集合）**——base 侧守门链内每个 job/step 的下列字段必须与 base 相等：
+                * **执行性字段**（`JOB_EXEC_FIELDS` = `if` / `needs` / `strategy` / `continue-on-error` /
+                  `uses` / `concurrency`；`STEP_EXEC_FIELDS` = `if` / `uses` / `continue-on-error`）——
+                  任一被削弱都可能令节点**恒不执行**（跳过 = Success）或**静默吞掉失败** ⇒ 输出为空
+                  ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖；
+                * **输出接线**：产出 job `outputs.<K>` 逐键归一值、产出 step `with` 的非 `filters` 键、
+                  产出 step `filters.image` ⊇（base 条目 ∪ 硬基线）——被改 / 删 / 改指 ⇒ 消费侧 `if` 恒假。
+              归一：`if` / `outputs` 做括号下标归一 + 空白折叠；`uses` 折叠空白；`needs` 集合口径；
+              `strategy` / `concurrency` 递归规范形（键序无关）⇒ **等价重排不假红、内容变化仍红**。
+              **消费节点完整性**——消费节点 = base 中「`if` 引用 `needs.<J>.outputs.<K>` 的 job」
+              （本仓 = `image-guard` 本体，即守门本体）：
+                (d)  head 侧仍有 job 的 `if` 引用 `needs.<J>.outputs.<K>`（消费点未被搬走）；
+                (d1) 同**消费 job key** 在 head **存在**（闭合「整删门禁 job」A24b）；
+                (d2) 该消费 job 的**执行性字段**与 base 逐字段相等（闭合 A23a/b/c、A24c、A28、A30、A36）；
+                (d3) 该消费 job 的**每个**（base 侧可定位的）step 在 head **存在且唯一**、其**执行性字段**
+                     与 base 逐字段相等（口径 (i)：按 step `name`，无 `name` 用 `uses` 兜底；闭合消费 step
+                     加 `if:false` 的 A27 / 删 step 的 A39 / 换 `uses` 的变体）。
+              全部失败信息**可定位**（含 job key / step 身份 / 字段名 / base 与 head 的差异值）。
+              """
+              if not isinstance(head_ci, dict):
+                  return ["{} structure unrecognizable at head (top-level is not a mapping)".format(CI_PATH)]
+              hjobs = head_ci.get("jobs")
+              if not isinstance(hjobs, dict):
+                  return ["{} has no 'jobs' mapping at head".format(CI_PATH)]
+
+              # 归一化 head 侧全部消费点引用（名字无关；下标语法已归一）。
+              head_refs = set()
+              for job in hjobs.values():
+                  head_refs |= _job_if_refs(job)
+
+              fails = []
+
+              def diff_exec(label, base_sig, head_node, fields):
+                  """逐字段比对**执行性签名**；任一字段不等 ⇒ 记一条可定位失败。"""
+                  head_sig = _exec_sig(head_node, fields)
+                  for f in fields:
+                      b = (base_sig or {}).get(f)
+                      h = (head_sig or {}).get(f)
+                      if b != h:
+                          fails.append(
+                              "{} `{}` changed vs base (base={!r} head={!r})".format(label, f, b, h)
+                          )
+
+              for ch in base_chains:
+                  J, K, ID = ch["producer_job"], ch["output_key"], ch["step_id"]
+
+                  # (d) 消费点未被搬走。
+                  if (J, K) not in head_refs:
+                      fails.append(
+                          "gating consumption point relocated: no head job `if` references "
+                          "needs.{}.outputs.{} (guard chain moved off the base anchor)".format(J, K)
+                      )
+
+                  # ---- 产出侧 ----
+                  hjob = hjobs.get(J)
+                  if not isinstance(hjob, dict):
+                      fails.append("producer job '{}' missing at head".format(J))
+                  else:
+                      # (c) 产出 job **执行性字段**逐字段不削弱
+                      #（`if`/`needs`/`strategy`/`continue-on-error`/`uses`/`concurrency`）。
+                      diff_exec("producer job '{}'".format(J), ch["producer_exec"], hjob, JOB_EXEC_FIELDS)
+
+                      # **输出接线**：产出 job `outputs.<K>` 逐键归一后须与 base 相等
+                      #（键缺失 / 值改恒假 / 改指其它 step ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖）。
+                      houtputs = hjob.get("outputs")
+                      houtputs = houtputs if isinstance(houtputs, dict) else {}
+                      for ok_key, base_val in sorted(ch["producer_outputs"].items()):
+                          head_val = _norm_expr(houtputs.get(ok_key))
+                          if base_val != head_val:
+                              fails.append(
+                                  "producer job '{}' `outputs.{}` changed vs base "
+                                  "(base={!r} head={!r})".format(J, ok_key, base_val, head_val)
+                              )
+
+                      hsteps = hjob.get("steps")
+                      matched = [
+                          s for s in (hsteps if isinstance(hsteps, list) else [])
+                          if isinstance(s, dict) and str(s.get("id") or "") == ID
+                      ]
+                      if not isinstance(hsteps, list):
+                          fails.append("producer job '{}' has no steps list at head".format(J))
+                      elif len(matched) != 1:
+                          fails.append(
+                              "producing step id '{}' in job '{}' missing or not unique at head "
+                              "(count={})".format(ID, J, len(matched))
+                          )
+                      elif not str(matched[0].get("uses") or "").startswith("dorny/paths-filter"):
+                          fails.append(
+                              "producing step '{}' in job '{}' no longer uses dorny/paths-filter "
+                              "at head".format(ID, J)
+                          )
+                      else:
+                          hstep = matched[0]
+                          # (a) 产出 step **执行性字段**（含 `uses`）逐字段不削弱。
+                          diff_exec(
+                              "producing step '{}' in job '{}'".format(ID, J),
+                              ch["producer_step_exec"], hstep, STEP_EXEC_FIELDS,
+                          )
+                          # (b) filters.image ⊇ BASE_ENTRIES ∪ 硬基线。
+                          raw = (hstep.get("with") or {}).get("filters")
+                          entries = None
+                          if isinstance(raw, str):
+                              try:
+                                  parsed = yaml.safe_load(raw)
+                              except yaml.YAMLError:
+                                  parsed = None
+                              if isinstance(parsed, dict) and isinstance(parsed.get("image"), list):
+                                  entries = {str(x) for x in parsed["image"]}
+                          if entries is None:
+                              fails.append(
+                                  "producing step '{}' in job '{}' filters.image unrecognizable at "
+                                  "head".format(ID, J)
+                              )
+                          else:
+                              required = ch["entries"] | BASELINE_IMAGE_ENTRIES
+                              missing = required - entries
+                              if missing:
+                                  fails.append(
+                                      "whitelist entries weakened: {} missing from filters.image of "
+                                      "job '{}'/step '{}' (present={})".format(
+                                          sorted(missing), J, ID, sorted(entries)
+                                      )
+                                  )
+                          # **输出接线**：产出 step `with` 的非 `filters` 键（键集合 + 值）须与 base 相等
+                          #（`list-files` / `predicate-quantifier` 会改变 `image` 输出语义 ⇒ 消费侧恒假）。
+                          hwith = hstep.get("with")
+                          hwith = hwith if isinstance(hwith, dict) else {}
+                          head_with_other = {
+                              str(k): _canon(v)
+                              for k, v in hwith.items() if str(k) != "filters"
+                          }
+                          if ch["producer_with_other"] != head_with_other:
+                              fails.append(
+                                  "producing step '{}' in job '{}' `with` (non-filters) changed vs base "
+                                  "(base={!r} head={!r})".format(
+                                      ID, J, ch["producer_with_other"], head_with_other
+                                  )
+                              )
+
+                  # ---- 消费侧 (d1)-(d5)：消费节点完整性 ----
+                  for cons in ch["consumers"]:
+                      C = cons["job_key"]
+                      hc = hjobs.get(C)
+                      # (d1) 消费 job 本体仍在。
+                      if not isinstance(hc, dict):
+                          fails.append(
+                              "gating consumer job '{}' missing at head (guard job deleted?; it consumed "
+                              "needs.{}.outputs.{})".format(C, J, K)
+                          )
+                          continue
+                      # (d2)/(d3)/(d5) 消费 job **执行性字段**逐字段不削弱。
+                      diff_exec("gating consumer job '{}'".format(C), cons["exec"], hc, JOB_EXEC_FIELDS)
+                      # (d4) 消费 job 的每个 step：存在且唯一、**执行性字段**逐字段不削弱。
+                      chsteps = hc.get("steps")
+                      if not isinstance(chsteps, list):
+                          fails.append("gating consumer job '{}' has no steps list at head".format(C))
+                          continue
+                      idx = {}
+                      for s in chsteps:
+                          ident = _step_identity(s)
+                          if ident is not None:
+                              idx.setdefault(ident, []).append(s)
+                      for ident, base_sig in sorted(cons["step_execs"].items()):
+                          cands = idx.get(ident, [])
+                          if len(cands) != 1:
+                              fails.append(
+                                  "gating consumer step [{}] in job '{}' missing or ambiguous at head "
+                                  "(count={})".format(ident, C, len(cands))
+                              )
+                              continue
+                          diff_exec(
+                              "gating consumer step [{}] in job '{}'".format(ident, C),
+                              base_sig, cands[0], STEP_EXEC_FIELDS,
+                          )
+              return fails
+
+
+          fail = []
+
+          # (1) 自守：本检查自己的 workflow 文件在 head 侧仍须存在（防「删除 / 改名守门本体」）。
+          #     语义：PR 无法用「删掉守门自己的文件」来让守门失效 —— 该删除在本 PR 上即报红。
+          #     边界：本断言只保「文件存在」（文件名是稳定契约）；对文件**内容**的逻辑弱化，
+          #     由 base 侧执行语义（本运行读 base 定义）与 code review 兜底，见规范 §8。
+          ok, _, err = api_raw(SELF_PATH, HEAD)
+          if not ok:
+              fail.append(
+                  "guard workflow {} not found at head {} (deleted or renamed?); api_err={}".format(
+                      SELF_PATH, HEAD, err
+                  )
+              )
+
+          # (2) 读 **base 版** ci.yml（可信锚；PR 不可篡改）解出守门链身份。
+          base_chains = None
+          ok, base_text, err = api_raw(CI_PATH, BASE)
+          if not ok:
+              fail.append("{} not found at base {}; api_err={}".format(CI_PATH, BASE, err))
+          else:
+              try:
+                  base_ci = yaml.safe_load(base_text)
+              except yaml.YAMLError as e:
+                  fail.append("{} YAML invalid at base {}: {}".format(CI_PATH, BASE, e))
+                  base_ci = None
+              if base_ci is not None:
+                  base_chains = locate_base_chains(base_ci)
+                  if base_chains is None:
+                      # base 结构不可识别 ⇒ fail-closed（不猜、不退回旧启发式）。
+                      fail.append(
+                          "could not locate the base gating chain in {} at base {} "
+                          "(base guard structure unrecognizable?)".format(CI_PATH, BASE)
+                      )
+
+          # (3) 读 **head 版** ci.yml，对 base 锚做「不削弱」断言（D1 (a)-(d)）。
+          if base_chains is not None:
+              ok, head_text, err = api_raw(CI_PATH, HEAD)
+              if not ok:
+                  fail.append("{} not found at head {} (deleted?); api_err={}".format(CI_PATH, HEAD, err))
+              else:
+                  parse_ok = True
+                  try:
+                      head_ci = yaml.safe_load(head_text)
+                  except yaml.YAMLError as e:
+                      # 覆盖残余边界 ②：改坏 ci.yml 语法 ⇒ 本检查在此报错（不再零证据）。
+                      fail.append("{} YAML invalid at head {}: {}".format(CI_PATH, HEAD, e))
+                      parse_ok = False
+                  if parse_ok:
+                      fail.extend(assert_head_not_weakened(base_chains, head_ci))
+
+          if fail:
+              print("::error title=Guard Self-Check FAILED::guard self-coverage is broken")
+              for item in fail:
+                  print("::error::{}".format(item))
+              print("Guard Self-Check FAILED:")
+              for item in fail:
+                  print(" - " + item)
+              sys.exit(1)
+
+          print("Guard Self-Check PASSED: base-anchored guard chain intact (no weakening) and guard workflow present.")
+          PY
