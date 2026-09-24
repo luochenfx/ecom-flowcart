@@ -8,9 +8,16 @@
 # 本检查的设计前提 —— 判定「不读被测 PR 自身的检出」：
 #   * 触发用 pull_request_target ⇒ 本 workflow 定义读自 base（默认分支），PR 无法篡改检查本体；
 #   * 全程不 actions/checkout、不执行任何 PR 代码，只经 GitHub REST API 读 head 侧文件做判定；
-#   * 判定锚定 = **消费链语义结构**（由下游 job 的 `needs.<j>.outputs.<k>` 反查「真正驱动门禁」
-#     的那条 dorny/paths-filter 步骤 → 取其 filters.image 条目集合下界），**不按首个同名 action、
-#     不按 job/step 名、更不按行号**（行号易腐，见 0008 §11「行号易腐」注）。
+#   * 判定锚定 = **base 侧守门链身份 + head 侧「不削弱」断言**：
+#     - 由 **base 版** ci.yml（`github.event.pull_request.base.sha`，PR 不可篡改）解出「门禁链身份」：
+#       下游 job 的 `needs.<j>.outputs.<k>` → 被消费输出 → 产出 step id → 该 step 的 filters.image 基线集合；
+#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）：产出 job/step 仍在且**唯一**且仍为 dorny、
+#       条目 ⊇ base 基线 ∪ 硬基线、产出 job/step 的 `if` 相对 base **未被新增/收紧**、
+#       消费点 `needs.<j>.outputs.<k>` **未被搬走**；
+#     - **不按** 首个同名 action、**不按** job/step 名、**更不按** 行号（行号易腐，见 0008 §11「行号易腐」注）。
+#   设计要点：**信任 base 侧**（PR 改不动）作为锚，而非 head 侧自报的消费链 —— 据此闭合
+#   「把消费点搬到任意含基线的 job」（A5/A5p）与「给守门链加恒假 `if` 使运行期恒不执行」（A16/A17）
+#   两类「静态结构完好、运行期覆盖已死」的假绿。威胁模型边界见规范 §9 / §13。
 #   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
 #
 # 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
@@ -53,6 +60,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # base 侧 SHA：作为**可信锚**解出守门链身份（base 内容 PR 不可篡改）。
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -65,28 +74,48 @@ jobs:
 
           REPO = os.environ["REPO"]
           HEAD = os.environ["PR_HEAD_SHA"]
+          BASE = os.environ["PR_BASE_SHA"]
 
           CI_PATH = ".github/workflows/ci.yml"
           SELF_PATH = ".github/workflows/guard-selfcheck.yml"
-          # 基线期望集合：硬编码于 base 侧本 workflow（PR 不可篡改）——下界断言。
-          # 语义 = 「真正驱动下游门禁（image-guard）的那条 dorny/paths-filter 步骤的
-          # filters.image 白名单条目集合 ⊇ 基线期望集合」。
+          # 硬基线：自守核心条目（下界）。与 base 侧解析出的 BASE_ENTRIES 合并为「必须 ⊆」的下界；
+          # 即使在 base 结构异常（解析失败 ⇒ 已 fail-closed）时，本集合仍作为兜底下界。
           BASELINE_IMAGE_ENTRIES = {".github/workflows/ci.yml"}
 
+          # 引用 token：**兼容**点号与括号下标两种写法（GitHub 表达式两种皆合法）：
+          #   needs.changes.outputs.image  ≡  needs['changes'].outputs['image']
+          #   steps.filter.outputs.image   ≡  steps['filter'].outputs['image']
+          # 先经 _norm 把 ['x'] / ["x"] 归一到 .x，两个正则即可同时吃下标语法（修 A8 假红）。
+          _BRACKET_INDEX = re.compile(r"\[\s*['\"]([A-Za-z0-9_-]+)['\"]\s*\]")
           # 门禁消费点：任一 job 的 `if` 表达式里引用 `needs.<job>.outputs.<key>`。
           NEEDS_OUTPUT_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
           # 产出步骤：job 的 `outputs.<key>` 值形如 `${{ steps.<id>.outputs.<key> }}`。
           STEP_OUTPUT_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
 
 
-          def api_raw(path):
-              """经 GitHub REST API 读 head 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
+          def _norm(value):
+              """规范化引用写法：把 ['x'] / ["x"] 归一到 .x（见上方 NEEDS_OUTPUT_REF 说明）。"""
+              return _BRACKET_INDEX.sub(r".\1", value) if isinstance(value, str) else ""
+
+
+          def _job_if_refs(job):
+              """返回该 job 的 `if` 中引用的 (job_key, output_key) 集合（下标语法已归一）。"""
+              if not isinstance(job, dict):
+                  return set()
+              return {
+                  (m.group(1), m.group(2))
+                  for m in NEEDS_OUTPUT_REF.finditer(_norm(str(job.get("if") or "")))
+              }
+
+
+          def api_raw(path, ref):
+              """经 GitHub REST API 读指定 ref 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
               proc = subprocess.run(
                   [
                       "gh", "api",
                       "-H", "Accept: application/vnd.github.raw",
                       "-H", "X-GitHub-Api-Version: 2022-11-28",
-                      "repos/{}/contents/{}?ref={}".format(REPO, path, HEAD),
+                      "repos/{}/contents/{}?ref={}".format(REPO, path, ref),
                   ],
                   capture_output=True,
                   text=True,
@@ -96,17 +125,16 @@ jobs:
               return False, "", (proc.stderr or "").strip()
 
 
-          def gating_image_entries(ci):
-              """定位「真正驱动下游门禁」的 dorny/paths-filter 步骤，返回其 filters.image 条目集合列表。
+          def locate_base_chains(ci):
+              """由 **base 版** ci.yml 解出「守门链身份」（可信锚；base 内容 PR 不可篡改）。
 
               锚定面 = **消费链语义结构**（而非「首个同名 action」，也非 job / step 名或行号）：
                 1) 若某 job 的 `if` 引用 `needs.<J>.outputs.<K>` ⇒「被消费的 job 输出」为门禁消费点；
                 2) 该输出由 `<J>.outputs.<K> = ${{ steps.<ID>.outputs.* }}` 产出 ⇒ 产出步骤 id = <ID>；
                 3) 该产出步骤须为 `uses: dorny/paths-filter*`，取其 `with.filters` → `image` 列表。
 
-              如此，「插入诱饵 dorny/paths-filter step」（未被任何 job 输出引用）**不会**遮蔽
-              真正驱动门禁的那一步（诱饵不再能制造假绿）。返回 list[set]（每个门禁产出步骤一个
-              集合，逐条断言 ⊇ 基线）；结构不可识别时返回 None（fail-closed，非裸异常）。
+              返回 list[dict]（每个门禁链一项，含 producer_job / output_key / step_id / entries /
+              job_if / step_if）；**任一不可识别 ⇒ None**（fail-closed，不猜、不退回旧启发式）。
               """
               if not isinstance(ci, dict):
                   return None
@@ -114,18 +142,13 @@ jobs:
               if not isinstance(jobs, dict):
                   return None
 
-              # 1) 收集门禁消费点 (job_key, output_key)。
               gating_outputs = set()
               for job in jobs.values():
-                  if not isinstance(job, dict):
-                      continue
-                  for m in NEEDS_OUTPUT_REF.finditer(str(job.get("if") or "")):
-                      gating_outputs.add((m.group(1), m.group(2)))
+                  gating_outputs |= _job_if_refs(job)
               if not gating_outputs:
                   return None
 
-              # 2) 解析每个门禁输出对应的「产出步骤 id」。
-              produced = []  # [(job_key, step_id)]
+              chains = []
               for job_key, out_key in sorted(gating_outputs):
                   job = jobs.get(job_key)
                   if not isinstance(job, dict):
@@ -133,23 +156,19 @@ jobs:
                   outputs = job.get("outputs")
                   if not isinstance(outputs, dict):
                       return None
-                  m = STEP_OUTPUT_REF.search(str(outputs.get(out_key) or ""))
+                  m = STEP_OUTPUT_REF.search(_norm(str(outputs.get(out_key) or "")))
                   if not m:
                       return None
-                  produced.append((job_key, m.group(1)))
-
-              # 3) 每个产出步骤须为 dorny/paths-filter 且其 filters.image 可识别。
-              result = []
-              for job_key, step_id in produced:
-                  steps = jobs[job_key].get("steps")
+                  step_id = m.group(1)
+                  steps = job.get("steps")
                   if not isinstance(steps, list):
                       return None
                   matched = [
                       s for s in steps
                       if isinstance(s, dict) and str(s.get("id") or "") == step_id
                   ]
+                  # 步骤缺失或 id 重复 ⇒ 结构有歧义 ⇒ fail-closed（不猜）。
                   if len(matched) != 1:
-                      # 步骤缺失或 id 重复 ⇒ 结构有歧义 ⇒ fail-closed（不猜）。
                       return None
                   step = matched[0]
                   if not str(step.get("uses") or "").startswith("dorny/paths-filter"):
@@ -163,8 +182,126 @@ jobs:
                       return None
                   if not isinstance(parsed, dict) or not isinstance(parsed.get("image"), list):
                       return None
-                  result.append({str(x) for x in parsed["image"]})
-              return result
+                  chains.append({
+                      "producer_job": job_key,
+                      "output_key": out_key,
+                      "step_id": step_id,
+                      "entries": {str(x) for x in parsed["image"]},
+                      "job_if": job.get("if"),
+                      "step_if": step.get("if"),
+                  })
+              return chains
+
+
+          def _if_changed(base_if, head_if):
+              """D1(c)：base 无 `if` ⇒ head 必须无 `if`；base 有 `if` ⇒ head 必须与 base 相等。
+
+              「新增 / 收紧」一律视为变更（红）—— 闭合「给守门链加恒假 `if` ⇒ 运行期恒不执行」
+              （A16 / A17）这类静态结构完好、运行期覆盖已死的假绿。
+              """
+              b = None if base_if is None else str(base_if)
+              h = None if head_if is None else str(head_if)
+              return b != h
+
+
+          def assert_head_not_weakened(base_chains, head_ci):
+              """对 head 侧做「不削弱」断言；返回失败信息 list（空 = 全通过）。
+
+              逐条（对应 D1 (a)-(d)）：
+                (a) 同 job key 存在、同 step id 存在且**唯一**、该 step 仍 `uses: dorny/paths-filter*`；
+                (b) 该 step 的 `filters.image` ⊇ **BASE_ENTRIES ∪ 硬基线**（不得删除/弱化 base 承诺的条目）；
+                (c) 该 **产出 job **与** 产出 step ** 的 `if` 相对 base 未被新增/收紧；
+                (d) head 侧仍有 job 的 `if` 引用 `needs.<J>.outputs.<K>`（消费点未被搬走）。
+              """
+              if not isinstance(head_ci, dict):
+                  return ["{} structure unrecognizable at head (top-level is not a mapping)".format(CI_PATH)]
+              hjobs = head_ci.get("jobs")
+              if not isinstance(hjobs, dict):
+                  return ["{} has no 'jobs' mapping at head".format(CI_PATH)]
+
+              # 归一化 head 侧全部消费点引用（名字无关；下标语法已归一）。
+              head_refs = set()
+              for job in hjobs.values():
+                  head_refs |= _job_if_refs(job)
+
+              fails = []
+              for ch in base_chains:
+                  J, K, ID = ch["producer_job"], ch["output_key"], ch["step_id"]
+
+                  # (d) 消费点未被搬走。
+                  if (J, K) not in head_refs:
+                      fails.append(
+                          "gating consumption point relocated: no head job `if` references "
+                          "needs.{}.outputs.{} (guard chain moved off the base anchor)".format(J, K)
+                      )
+
+                  # (a) 产出 job / step 仍在、唯一、仍为 dorny/paths-filter。
+                  hjob = hjobs.get(J)
+                  if not isinstance(hjob, dict):
+                      fails.append("producer job '{}' missing at head".format(J))
+                      continue
+                  hsteps = hjob.get("steps")
+                  if not isinstance(hsteps, list):
+                      fails.append("producer job '{}' has no steps list at head".format(J))
+                      continue
+                  matched = [
+                      s for s in hsteps
+                      if isinstance(s, dict) and str(s.get("id") or "") == ID
+                  ]
+                  if len(matched) != 1:
+                      fails.append(
+                          "producing step id '{}' in job '{}' missing or not unique at head "
+                          "(count={})".format(ID, J, len(matched))
+                      )
+                      continue
+                  hstep = matched[0]
+                  if not str(hstep.get("uses") or "").startswith("dorny/paths-filter"):
+                      fails.append(
+                          "producing step '{}' in job '{}' no longer uses dorny/paths-filter "
+                          "at head".format(ID, J)
+                      )
+                      continue
+
+                  # (b) filters.image ⊇ BASE_ENTRIES ∪ 硬基线。
+                  raw = (hstep.get("with") or {}).get("filters")
+                  entries = None
+                  if isinstance(raw, str):
+                      try:
+                          parsed = yaml.safe_load(raw)
+                      except yaml.YAMLError:
+                          parsed = None
+                      if isinstance(parsed, dict) and isinstance(parsed.get("image"), list):
+                          entries = {str(x) for x in parsed["image"]}
+                  if entries is None:
+                      fails.append(
+                          "producing step '{}' in job '{}' filters.image unrecognizable at "
+                          "head".format(ID, J)
+                      )
+                  else:
+                      required = ch["entries"] | BASELINE_IMAGE_ENTRIES
+                      missing = required - entries
+                      if missing:
+                          fails.append(
+                              "whitelist entries weakened: {} missing from filters.image of "
+                              "job '{}'/step '{}' (present={})".format(
+                                  sorted(missing), J, ID, sorted(entries)
+                              )
+                          )
+
+                  # (c) 产出 job / step 的 `if` 未被新增/收紧。
+                  if _if_changed(ch["job_if"], hjob.get("if")):
+                      fails.append(
+                          "producer job '{}' `if` changed vs base (base={!r} head={!r})".format(
+                              J, ch["job_if"], hjob.get("if")
+                          )
+                      )
+                  if _if_changed(ch["step_if"], hstep.get("if")):
+                      fails.append(
+                          "producing step '{}' `if` changed vs base (base={!r} head={!r})".format(
+                              ID, ch["step_if"], hstep.get("if")
+                          )
+                      )
+              return fails
 
 
           fail = []
@@ -173,7 +310,7 @@ jobs:
           #     语义：PR 无法用「删掉守门自己的文件」来让守门失效 —— 该删除在本 PR 上即报红。
           #     边界：本断言只保「文件存在」（文件名是稳定契约）；对文件**内容**的逻辑弱化，
           #     由 base 侧执行语义（本运行读 base 定义）与 code review 兜底，见规范 §8。
-          ok, _, err = api_raw(SELF_PATH)
+          ok, _, err = api_raw(SELF_PATH, HEAD)
           if not ok:
               fail.append(
                   "guard workflow {} not found at head {} (deleted or renamed?); api_err={}".format(
@@ -181,33 +318,41 @@ jobs:
                   )
               )
 
-          # (2) 核心：head 侧 ci.yml 中「驱动下游门禁的 dorny 步骤」的 filters.image 仍须覆盖基线条目。
-          ok, text, err = api_raw(CI_PATH)
+          # (2) 读 **base 版** ci.yml（可信锚；PR 不可篡改）解出守门链身份。
+          base_chains = None
+          ok, base_text, err = api_raw(CI_PATH, BASE)
           if not ok:
-              fail.append("{} not found at head {} (deleted?); api_err={}".format(CI_PATH, HEAD, err))
+              fail.append("{} not found at base {}; api_err={}".format(CI_PATH, BASE, err))
           else:
               try:
-                  ci = yaml.safe_load(text)
+                  base_ci = yaml.safe_load(base_text)
               except yaml.YAMLError as e:
-                  # 覆盖残余边界 ②：改坏 ci.yml 语法 ⇒ 本检查在此报错（不再零证据）。
-                  fail.append("{} YAML invalid at head {}: {}".format(CI_PATH, HEAD, e))
-                  ci = None
-              entries_list = gating_image_entries(ci)
-              if entries_list is None:
-                  # 含「顶层非映射 / 无门禁消费点 / 产出步骤缺失 / filters 或 image 结构不可识别」
-                  # 等所有不可识别情形 ⇒ 显式 fail-closed（非裸 AttributeError traceback）。
-                  fail.append(
-                      "could not locate the dorny/paths-filter step gating downstream jobs "
-                      "in head {} (guard structure changed?)".format(CI_PATH)
-                  )
+                  fail.append("{} YAML invalid at base {}: {}".format(CI_PATH, BASE, e))
+                  base_ci = None
+              if base_ci is not None:
+                  base_chains = locate_base_chains(base_ci)
+                  if base_chains is None:
+                      # base 结构不可识别 ⇒ fail-closed（不猜、不退回旧启发式）。
+                      fail.append(
+                          "could not locate the base gating chain in {} at base {} "
+                          "(base guard structure unrecognizable?)".format(CI_PATH, BASE)
+                      )
+
+          # (3) 读 **head 版** ci.yml，对 base 锚做「不削弱」断言（D1 (a)-(d)）。
+          if base_chains is not None:
+              ok, head_text, err = api_raw(CI_PATH, HEAD)
+              if not ok:
+                  fail.append("{} not found at head {} (deleted?); api_err={}".format(CI_PATH, HEAD, err))
               else:
-                  for entries in entries_list:
-                      missing = BASELINE_IMAGE_ENTRIES - entries
-                      if missing:
-                          fail.append(
-                              "whitelist self-entry removed: {} not in filters.image "
-                              "(present={})".format(sorted(missing), sorted(entries))
-                          )
+                  parse_ok = True
+                  try:
+                      head_ci = yaml.safe_load(head_text)
+                  except yaml.YAMLError as e:
+                      # 覆盖残余边界 ②：改坏 ci.yml 语法 ⇒ 本检查在此报错（不再零证据）。
+                      fail.append("{} YAML invalid at head {}: {}".format(CI_PATH, HEAD, e))
+                      parse_ok = False
+                  if parse_ok:
+                      fail.extend(assert_head_not_weakened(base_chains, head_ci))
 
           if fail:
               print("::error title=Guard Self-Check FAILED::guard self-coverage is broken")
@@ -218,5 +363,5 @@ jobs:
                   print(" - " + item)
               sys.exit(1)
 
-          print("Guard Self-Check PASSED: whitelist self-entry intact and guard workflow present.")
+          print("Guard Self-Check PASSED: base-anchored guard chain intact (no weakening) and guard workflow present.")
           PY
