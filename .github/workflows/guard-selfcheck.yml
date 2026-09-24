@@ -8,20 +8,21 @@
 # 本检查的设计前提 —— 判定「不读被测 PR 自身的检出」：
 #   * 触发用 pull_request_target ⇒ 本 workflow 定义读自 base（默认分支），PR 无法篡改检查本体；
 #   * 全程不 actions/checkout、不执行任何 PR 代码，只经 GitHub REST API 读 head 侧文件做判定；
-#   * 判定锚定 = **base 侧守门链身份 + head 侧「不削弱」断言**：
+#   * 判定锚定 = **base 侧守门链身份 + head 侧「不削弱」断言（封闭字段集合）**：
 #     - 由 **base 版** ci.yml（`github.event.pull_request.base.sha`，PR 不可篡改）解出「门禁链身份」：
 #       下游 job 的 `needs.<j>.outputs.<k>` → 被消费输出 → 产出 step id → 该 step 的 filters.image 基线集合；
-#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）——**产出侧**：产出 job/step 仍在且**唯一**、
-#       仍 `uses: dorny/paths-filter`（`uses` 与 base 相等）、条目 ⊇ base 基线 ∪ 硬基线、
-#       产出 job/step 的 `if` / `continue-on-error` 相对 base **未变**；**消费侧**：消费点
-#       `needs.<j>.outputs.<k>` 未被搬走、消费 job（`image-guard` 本体）仍在、其 `if` / `needs` /
-#       `continue-on-error` 与 base 相等、其各 step 的 `if` 相对 base 未变（消费节点完整性）；
+#     - 对 **head 版** ci.yml 断言「不削弱」（任一不成立即红）——**判据 = 逐字段相等（封闭集合）**：
+#       **执行性字段**（产出 / 消费 job·step 的 `if` / `needs` / `strategy` / `continue-on-error` / `uses`，
+#       job 另含 `concurrency`）+ **输出接线**（产出 job `outputs.<k>` 逐键值、产出 step `with` 的非
+#       `filters` 键、产出 step `filters.image` ⊇ base ∪ 硬基线）；**消费节点完整性**：消费点
+#       `needs.<j>.outputs.<k>` 未被搬走、消费 job（`image-guard` 本体）仍在、其执行性字段与各 step
+#       执行性字段逐条与 base 相等；
 #     - **不按** 首个同名 action、**不按** job/step 名、**更不按** 行号（行号易腐，见 0008 §11「行号易腐」注）。
-#   设计要点：**信任 base 侧**（PR 改不动）作为锚，而非 head 侧自报的消费链 —— 据此闭合
-#   「把消费点搬到任意含基线的 job」（A5/A5p）与「给守门链加恒假 `if` 使运行期恒不执行」（A16/A17）
-#   两类「静态结构完好、运行期覆盖已死」的假绿；第 3 轮起**对称扩展到消费节点**（`image-guard` 本体
-#   被删 / 其 `if` / `needs` / `continue-on-error` / 其 step `if` 被改 ⇒ 红；A23/A24b/A24c/A27/A28/A30）。
-#   威胁模型边界见规范 §9 / §13。
+#   设计要点：**信任 base 侧**（PR 改不动）作为锚，而非 head 侧自报的消费链 —— 据此闭合「把消费点搬到
+#   任意含基线的 job」（A5/A5p）、「给守门链加恒假 `if` 使运行期恒不执行」（A16/A17）、「改 / 删产出 job
+#   `outputs.<k>` 接线」（X1–X4）三类「静态结构完好、运行期覆盖已死」的假绿；第 3 轮起对称扩展到
+#   **消费节点**（A23/A24b/A24c/A27/A28/A30）；第 4 轮起判据升级为**可枚举的封闭字段集合**并补**封闭性
+#   论证**（见规范 §6.2），消除「逐属性打地鼠」。威胁模型边界见规范 §9 / §13。
 #   决策与自守边界详见 docs/specs/0010-ci-guard-selfcheck.md。
 #
 # 说明：本文件为新增文件，不改动 ci.yml 的 changes 判据与 image-guard 运行时契约断言（AC3）。
@@ -96,6 +97,23 @@ jobs:
           # 产出步骤：job 的 `outputs.<key>` 值形如 `${{ steps.<id>.outputs.<key> }}`。
           STEP_OUTPUT_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.outputs\.")
 
+          # ---- D1（第 4 轮）：可枚举的**封闭字段集合**（「守门链节点不削弱」的判据面）----
+          # 判据从「逐属性打地鼠」（每轮补一个属性）升级为**封闭集合**：下述两类字段必须与 base
+          # **逐字段相等**。理由（封闭性论证见规范 §6.2）：只有这两类字段能改变「job/step 是否执行」
+          # 或「其输出值」，从而产生**静默零覆盖**——
+          #   * 执行性：任一被削弱都可能令该 job/step **恒不执行**（job 被 `if` 跳过 = 官方语义 Success，E5）
+          #     或**静默吞掉失败** ⇒ 输出为空 ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖。
+          #     - `needs` / `if`：跳过；`continue-on-error`：吞失败；`strategy`：空矩阵 ⇒ 零 job（Success）；
+          #     - `uses`：换成「成功但不产 output」的 action ⇒ 输出为空；
+          #     - `concurrency`：job 被取消 ⇒ 沿 `needs` 依赖链下游 skipped = Success。
+          #   * 输出接线：产出 job `outputs.<K>` 值 / 产出 step `with` 的非 `filters` 键
+          #     （`list-files` 会把 output 由 `'true'` 改为文件列表、`predicate-quantifier` 改变匹配语义
+          #      ⇒ 消费侧恒假）——由下方 `producer_outputs` / `producer_with_other` 承载。
+          # **集合外**字段（`run` 正文 / `env` / `permissions` / `timeout-minutes` / step 顺序 / `with` 的
+          # `filters` 之外的时序……）至多令 job **可见失败（红）**，不产生静默零覆盖 ⇒ **不纳入**（如实登记）。
+          JOB_EXEC_FIELDS = ("if", "needs", "strategy", "continue-on-error", "uses", "concurrency")
+          STEP_EXEC_FIELDS = ("if", "uses", "continue-on-error")
+
 
           def _norm(value):
               """规范化引用写法：把 ['x'] / ["x"] 归一到 .x（见上方 NEEDS_OUTPUT_REF 说明）。"""
@@ -163,6 +181,57 @@ jobs:
               return None
 
 
+          def _canon(value):
+              """递归规范化任意 YAML 值为**可比较规范形**（执行性字段逐字段相等用）。
+
+              - `None` ⇒ `None`；`bool` / `int` / `float` ⇒ 原样；
+              - `str` ⇒ 先括号下标归一（`_norm`）再折叠连续空白 + strip；
+              - `dict` ⇒ 键转字符串并**排序**（键序无关）；`list` ⇒ 保序递归；
+              - 其它 ⇒ `str(value)`。
+
+              ⇒ 键序 / 空白 / 下标写法的**等价重排**不假红（A8/A33），任何**内容变化**仍不等（红）。
+              """
+              if value is None:
+                  return None
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, (int, float)):
+                  return value
+              if isinstance(value, str):
+                  return re.sub(r"\s+", " ", _norm(value)).strip()
+              if isinstance(value, dict):
+                  return {
+                      str(k): _canon(v)
+                      for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+                  }
+              if isinstance(value, list):
+                  return [_canon(v) for v in value]
+              return str(value)
+
+
+          def _norm_field(field, value):
+              """按字段语义规范化（执行性字段逐字段比较的口径）：
+
+              `needs` 用**集合口径**（`str` ≡ 单元素 `list`）；`if` / `continue-on-error` 用**表达式口径**
+              （下标归一 + 空白折叠）；`uses` 用**标量口径**（折叠空白）；`strategy` / `concurrency`
+              用 `_canon`（递归规范形）。
+              """
+              if field == "needs":
+                  return _norm_needs(value)
+              if field in ("if", "continue-on-error"):
+                  return _norm_expr(value)
+              if field == "uses":
+                  return _norm_ws(value)
+              return _canon(value)
+
+
+          def _exec_sig(node, fields):
+              """取节点（job 或 step）在给定**执行性字段集合**上的归一签名（dict）；非映射 ⇒ `None`。"""
+              if not isinstance(node, dict):
+                  return None
+              return {f: _norm_field(f, node.get(f)) for f in fields}
+
+
           def api_raw(path, ref):
               """经 GitHub REST API 读指定 ref 侧文件原文（不 checkout PR）。返回 (ok, text, err)。"""
               proc = subprocess.run(
@@ -190,9 +259,13 @@ jobs:
                 3) 该产出步骤须为 `uses: dorny/paths-filter*`，取其 `with.filters` → `image` 列表。
 
               返回 list[dict]（每个门禁链一项）：
-                产出侧 = producer_job / output_key / step_id / step_uses / entries / job_if / step_if /
-                         job_continue_on_error；
-                消费侧 = consumers = [{job_key, if, needs, continue_on_error, step_ifs} ...]。
+                产出侧 = producer_job / output_key / step_id / step_uses / entries /
+                         **producer_exec**（产出 job 执行性签名）/
+                         **producer_outputs**（产出 job `outputs.<K>` 归一值，逐键）/
+                         **producer_step_exec**（产出 step 执行性签名）/
+                         **producer_with_other**（产出 step `with` 的非 `filters` 键归一值）；
+                消费侧 = consumers = [{job_key, **exec**（消费 job 执行性签名）,
+                         **step_execs**（各 step 身份 → 执行性签名）} ...]。
 
               **D4 口径**：base 侧引用「产出非 dorny / 产出不可解」的无关 job **跳过**（base 是可信锚，
               跳过无害），以免将来 base 新增此类 job 令本检查在**所有** PR 上恒红（潜伏恒红）。若跳过
@@ -248,8 +321,9 @@ jobs:
                   if not isinstance(parsed, dict) or not isinstance(parsed.get("image"), list):
                       continue
 
-                  # 消费节点完整性基线（D1 (d1)-(d5)）：记录每个消费 job 的 key / if / needs /
-                  # continue-on-error / 各 step 的「身份 → if」映射。
+                  # 消费节点完整性基线（D1 (d1)-(d5)）：记录每个消费 job 的 key + **执行性签名**
+                  # （`if` / `needs` / `strategy` / `continue-on-error` / `uses` / `concurrency`）
+                  # 与各 step 的「身份 → 执行性签名」映射。
                   consumers = []
                   for consumer_key in sorted(consumer_keys):
                       cjob = jobs.get(consumer_key)
@@ -258,28 +332,40 @@ jobs:
                       csteps = cjob.get("steps")
                       if not isinstance(csteps, list):
                           continue
-                      step_ifs = {}
+                      step_execs = {}
                       ambiguous = False
                       for cstep in csteps:
                           ident = _step_identity(cstep)
                           if ident is None:
                               continue
-                          if ident in step_ifs:
+                          if ident in step_execs:
                               ambiguous = True
                               break
-                          step_ifs[ident] = cstep.get("if")
+                          step_execs[ident] = _exec_sig(cstep, STEP_EXEC_FIELDS)
                       if ambiguous:
                           # 消费 job step 身份歧义 ⇒ 该消费节点不可解 ⇒ 跳过（base 可信锚，跳过无害）
                           continue
                       consumers.append({
                           "job_key": consumer_key,
-                          "if": cjob.get("if"),
-                          "needs": _norm_needs(cjob.get("needs")),
-                          "continue_on_error": cjob.get("continue-on-error"),
-                          "step_ifs": step_ifs,
+                          "exec": _exec_sig(cjob, JOB_EXEC_FIELDS),
+                          "step_execs": step_execs,
                       })
                   if not consumers:
                       continue
+
+                  # 产出侧**输出接线**基线（D1「输出接线」类）：
+                  #   * 产出 job `outputs.<K>`：base 的**每个**键归一后须在 head 相等（键缺失 / 值改 /
+                  #     改指其它 step ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖；闭合 X1/X2/X3/X4）；
+                  #   * 产出 step `with` 的**非 `filters` 键**（`filters` 由 (b) 下界断言单独处理）：
+                  #     `list-files` / `predicate-quantifier` 会改变 `image` 输出语义 ⇒ 逐键绑定。
+                  producer_outputs = {
+                      str(k): _norm_expr(v) for k, v in outputs.items()
+                  }
+                  step_with = step.get("with") if isinstance(step.get("with"), dict) else {}
+                  producer_with_other = {
+                      str(k): _canon(v)
+                      for k, v in step_with.items() if str(k) != "filters"
+                  }
 
                   chains.append({
                       "producer_job": job_key,
@@ -287,9 +373,10 @@ jobs:
                       "step_id": step_id,
                       "step_uses": uses,
                       "entries": {str(x) for x in parsed["image"]},
-                      "job_if": producer.get("if"),
-                      "job_continue_on_error": producer.get("continue-on-error"),
-                      "step_if": step.get("if"),
+                      "producer_exec": _exec_sig(producer, JOB_EXEC_FIELDS),
+                      "producer_outputs": producer_outputs,
+                      "producer_step_exec": _exec_sig(step, STEP_EXEC_FIELDS),
+                      "producer_with_other": producer_with_other,
                       "consumers": consumers,
                   })
               if not chains:
@@ -297,37 +384,27 @@ jobs:
               return chains
 
 
-          def _if_changed(base_if, head_if):
-              """D1(c)/D3：base 无 `if` ⇒ head 必须无 `if`；base 有 `if` ⇒ head 须与 base **归一后相等**。
-
-              归一 = 括号下标归一（`_norm`）+ 折叠连续空白 + strip（`_norm_expr`）⇒ **空白重排 / 下标写法
-              视为等价（绿，修 A8/A33）**；任何**语义变化**（新增 / 收紧 / 恒假写法）仍视为变更（红）——
-              闭合「给守门链加恒假 `if` ⇒ 运行期恒不执行」（A16 / A17）这类静态结构完好、运行期覆盖已死
-              的假绿。消费侧 `if`（(d2)）与产出侧 `if`（(c)）共用本判据。
-              """
-              return _norm_expr(base_if) != _norm_expr(head_if)
-
-
           def assert_head_not_weakened(base_chains, head_ci):
-              """对 head 侧做「不削弱」断言（含**消费节点完整性**）；返回失败信息 list（空 = 全通过）。
+              """对 head 侧做「不削弱」断言（**D1 封闭集合：执行性 + 输出接线**）；返回失败信息 list。
 
-              **产出侧（D1 (a)-(c)）**
-                (a) 同 job key 存在、同 step id 存在且**唯一**、该 step 仍 `uses: dorny/paths-filter*`
-                    且 `uses` 与 base **相等**（闭合「换掉 / 换版本 dorny」类）；
-                (b) 该 step 的 `filters.image` ⊇ **BASE_ENTRIES ∪ 硬基线**（不得删除/弱化 base 承诺的条目）；
-                (c) 该 **产出 job** 与 **产出 step** 的 `if` 相对 base **归一后相等**；产出 job 的
-                    `continue-on-error` 与 base 相等（闭合「加 `if` / `continue-on-error` 使运行期覆盖已死」）。
-              **消费侧（D1 (d1)-(d5)，第 3 轮新增）**——消费节点 = base 中「`if` 引用 `needs.<J>.outputs.<K>`
-              的 job」（本仓 = `image-guard` 本体，即守门本体）：
+              **判据 = 逐字段相等（封闭集合）**——base 侧守门链内每个 job/step 的下列字段必须与 base 相等：
+                * **执行性字段**（`JOB_EXEC_FIELDS` = `if` / `needs` / `strategy` / `continue-on-error` /
+                  `uses` / `concurrency`；`STEP_EXEC_FIELDS` = `if` / `uses` / `continue-on-error`）——
+                  任一被削弱都可能令节点**恒不执行**（跳过 = Success）或**静默吞掉失败** ⇒ 输出为空
+                  ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖；
+                * **输出接线**：产出 job `outputs.<K>` 逐键归一值、产出 step `with` 的非 `filters` 键、
+                  产出 step `filters.image` ⊇（base 条目 ∪ 硬基线）——被改 / 删 / 改指 ⇒ 消费侧 `if` 恒假。
+              归一：`if` / `outputs` 做括号下标归一 + 空白折叠；`uses` 折叠空白；`needs` 集合口径；
+              `strategy` / `concurrency` 递归规范形（键序无关）⇒ **等价重排不假红、内容变化仍红**。
+              **消费节点完整性**——消费节点 = base 中「`if` 引用 `needs.<J>.outputs.<K>` 的 job」
+              （本仓 = `image-guard` 本体，即守门本体）：
                 (d)  head 侧仍有 job 的 `if` 引用 `needs.<J>.outputs.<K>`（消费点未被搬走）；
                 (d1) 同**消费 job key** 在 head **存在**（闭合「整删门禁 job」A24b）；
-                (d2) 该消费 job 的 `if` 与 base **归一后相等**（闭合 A23a/b/c、A24c、A30）；
-                (d3) 该消费 job 的 `needs` 与 base 相等（集合口径，容忍 `str` vs 单元素 `list`，闭合 A28）；
-                (d4) 该消费 job 的**每个**（base 侧可定位的）step 在 head **存在且唯一**、其 `if` 与 base
-                     **归一后相等**（口径 (i)：按 step `name`，无 `name` 用 `uses` 兜底；闭合消费 step
-                     加 `if:false` 的 A27）；
-                (d5) 该消费 job 的 `continue-on-error` 与 base 相等（同类变体：恒不阻断）。
-              全部失败信息**可定位**（含 job key / step 身份 / base 与 head 的差异值）。
+                (d2) 该消费 job 的**执行性字段**与 base 逐字段相等（闭合 A23a/b/c、A24c、A28、A30、A36）；
+                (d3) 该消费 job 的**每个**（base 侧可定位的）step 在 head **存在且唯一**、其**执行性字段**
+                     与 base 逐字段相等（口径 (i)：按 step `name`，无 `name` 用 `uses` 兜底；闭合消费 step
+                     加 `if:false` 的 A27 / 删 step 的 A39 / 换 `uses` 的变体）。
+              全部失败信息**可定位**（含 job key / step 身份 / 字段名 / base 与 head 的差异值）。
               """
               if not isinstance(head_ci, dict):
                   return ["{} structure unrecognizable at head (top-level is not a mapping)".format(CI_PATH)]
@@ -342,19 +419,16 @@ jobs:
 
               fails = []
 
-              def check_if(label, base_if, head_if):
-                  if _if_changed(base_if, head_if):
-                      fails.append(
-                          "{} `if` changed vs base (base={!r} head={!r})".format(label, base_if, head_if)
-                      )
-
-              def check_scalar(label, base_val, head_val):
-                  if _norm_ws(base_val) != _norm_ws(head_val):
-                      fails.append(
-                          "{} changed vs base (base={!r} head={!r})".format(
-                              label, base_val, head_val
+              def diff_exec(label, base_sig, head_node, fields):
+                  """逐字段比对**执行性签名**；任一字段不等 ⇒ 记一条可定位失败。"""
+                  head_sig = _exec_sig(head_node, fields)
+                  for f in fields:
+                      b = (base_sig or {}).get(f)
+                      h = (head_sig or {}).get(f)
+                      if b != h:
+                          fails.append(
+                              "{} `{}` changed vs base (base={!r} head={!r})".format(label, f, b, h)
                           )
-                      )
 
               for ch in base_chains:
                   J, K, ID = ch["producer_job"], ch["output_key"], ch["step_id"]
@@ -366,11 +440,27 @@ jobs:
                           "needs.{}.outputs.{} (guard chain moved off the base anchor)".format(J, K)
                       )
 
-                  # ---- 产出侧 (a)-(c) ----
+                  # ---- 产出侧 ----
                   hjob = hjobs.get(J)
                   if not isinstance(hjob, dict):
                       fails.append("producer job '{}' missing at head".format(J))
                   else:
+                      # (c) 产出 job **执行性字段**逐字段不削弱
+                      #（`if`/`needs`/`strategy`/`continue-on-error`/`uses`/`concurrency`）。
+                      diff_exec("producer job '{}'".format(J), ch["producer_exec"], hjob, JOB_EXEC_FIELDS)
+
+                      # **输出接线**：产出 job `outputs.<K>` 逐键归一后须与 base 相等
+                      #（键缺失 / 值改恒假 / 改指其它 step ⇒ 消费侧 `if` 恒假 ⇒ 静默零覆盖）。
+                      houtputs = hjob.get("outputs")
+                      houtputs = houtputs if isinstance(houtputs, dict) else {}
+                      for ok_key, base_val in sorted(ch["producer_outputs"].items()):
+                          head_val = _norm_expr(houtputs.get(ok_key))
+                          if base_val != head_val:
+                              fails.append(
+                                  "producer job '{}' `outputs.{}` changed vs base "
+                                  "(base={!r} head={!r})".format(J, ok_key, base_val, head_val)
+                              )
+
                       hsteps = hjob.get("steps")
                       matched = [
                           s for s in (hsteps if isinstance(hsteps, list) else [])
@@ -390,10 +480,10 @@ jobs:
                           )
                       else:
                           hstep = matched[0]
-                          # (a) 强化：产出 step 的 `uses` 与 base 相等（闭合换 dorny 版本 / 换 action）。
-                          check_scalar(
-                              "producing step '{}' `uses` in job '{}'".format(ID, J),
-                              ch["step_uses"], hstep.get("uses"),
+                          # (a) 产出 step **执行性字段**（含 `uses`）逐字段不削弱。
+                          diff_exec(
+                              "producing step '{}' in job '{}'".format(ID, J),
+                              ch["producer_step_exec"], hstep, STEP_EXEC_FIELDS,
                           )
                           # (b) filters.image ⊇ BASE_ENTRIES ∪ 硬基线。
                           raw = (hstep.get("with") or {}).get("filters")
@@ -420,17 +510,21 @@ jobs:
                                           sorted(missing), J, ID, sorted(entries)
                                       )
                                   )
-                          # (c) 产出 step 的 `if` 未被新增/收紧。
-                          check_if(
-                              "producing step '{}' in job '{}'".format(ID, J),
-                              ch["step_if"], hstep.get("if"),
-                          )
-                      # (c) 产出 job 的 `if` / `continue-on-error` 未变。
-                      check_if("producer job '{}'".format(J), ch["job_if"], hjob.get("if"))
-                      check_scalar(
-                          "producer job '{}' `continue-on-error`".format(J),
-                          ch["job_continue_on_error"], hjob.get("continue-on-error"),
-                      )
+                          # **输出接线**：产出 step `with` 的非 `filters` 键（键集合 + 值）须与 base 相等
+                          #（`list-files` / `predicate-quantifier` 会改变 `image` 输出语义 ⇒ 消费侧恒假）。
+                          hwith = hstep.get("with")
+                          hwith = hwith if isinstance(hwith, dict) else {}
+                          head_with_other = {
+                              str(k): _canon(v)
+                              for k, v in hwith.items() if str(k) != "filters"
+                          }
+                          if ch["producer_with_other"] != head_with_other:
+                              fails.append(
+                                  "producing step '{}' in job '{}' `with` (non-filters) changed vs base "
+                                  "(base={!r} head={!r})".format(
+                                      ID, J, ch["producer_with_other"], head_with_other
+                                  )
+                              )
 
                   # ---- 消费侧 (d1)-(d5)：消费节点完整性 ----
                   for cons in ch["consumers"]:
@@ -443,21 +537,9 @@ jobs:
                               "needs.{}.outputs.{})".format(C, J, K)
                           )
                           continue
-                      # (d2) 消费 job 的 `if` 未变。
-                      check_if("gating consumer job '{}'".format(C), cons["if"], hc.get("if"))
-                      # (d3) 消费 job 的 `needs` 未变（集合口径）。
-                      if cons["needs"] != _norm_needs(hc.get("needs")):
-                          fails.append(
-                              "gating consumer job '{}' `needs` changed vs base (base={!r} head={!r})".format(
-                                  C, list(cons["needs"]), hc.get("needs")
-                              )
-                          )
-                      # (d5) 消费 job 的 `continue-on-error` 未变。
-                      check_scalar(
-                          "gating consumer job '{}' `continue-on-error`".format(C),
-                          cons["continue_on_error"], hc.get("continue-on-error"),
-                      )
-                      # (d4) 消费 job 的每个 step 仍在、唯一、`if` 未变。
+                      # (d2)/(d3)/(d5) 消费 job **执行性字段**逐字段不削弱。
+                      diff_exec("gating consumer job '{}'".format(C), cons["exec"], hc, JOB_EXEC_FIELDS)
+                      # (d4) 消费 job 的每个 step：存在且唯一、**执行性字段**逐字段不削弱。
                       chsteps = hc.get("steps")
                       if not isinstance(chsteps, list):
                           fails.append("gating consumer job '{}' has no steps list at head".format(C))
@@ -467,7 +549,7 @@ jobs:
                           ident = _step_identity(s)
                           if ident is not None:
                               idx.setdefault(ident, []).append(s)
-                      for ident, base_step_if in cons["step_ifs"].items():
+                      for ident, base_sig in sorted(cons["step_execs"].items()):
                           cands = idx.get(ident, [])
                           if len(cands) != 1:
                               fails.append(
@@ -475,9 +557,9 @@ jobs:
                                   "(count={})".format(ident, C, len(cands))
                               )
                               continue
-                          check_if(
+                          diff_exec(
                               "gating consumer step [{}] in job '{}'".format(ident, C),
-                              base_step_if, cands[0].get("if"),
+                              base_sig, cands[0], STEP_EXEC_FIELDS,
                           )
               return fails
 
