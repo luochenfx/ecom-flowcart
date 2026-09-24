@@ -2,7 +2,7 @@
 
 > 来源：GitHub issue [#103『Build: 守门不可自守删除自己——设计不读 PR 自身检出的检查』](https://github.com/luochenfx/ecom-flowcart/issues/103)（label `ready-for-agent`）
 > 依赖：[规范 0008（CI 镜像构建守门）](./0008-ci-image-build-guard.md) §10 R2（残余边界 ①「删除自己」/ ②「语法级失效」）、§11（回滚路径 2「白名单行删除」）、§13；[规范 0009（CI required status check 门禁）](./0009-ci-required-status-gate.md) §10 R4、§13（均声明本项**另开独立 build 票**）
-> 状态：**v1（实现期）** —— 本轮落地自守 workflow 本体 + 本规范；trail 自举实测须待 workflow 合并入 base 后执行（见 §8 时序依赖）。
+> 状态：**v1.1（实现期 + 第 1 轮审查修复）** —— 落地自守 workflow 本体 + 本规范；第 1 轮审查后：锚定面改为**消费链**（闭合诱饵遮蔽假绿）、**显式**安装 PyYAML、收窄权限、补自守边界 B8 与三段式（正向绿→删行红→语法坏红）trail 计划、补 `0009` §10 R4 一行回指；trail 自举实测须待 workflow 合并入 base 后执行（见 §8 时序依赖）。
 > 范围声明：本规范**只**解决「镜像守门的路径白名单**不再自守自己**」这一命题（#94-① 残余边界）。**不改** mirror 守门的判据与运行时契约断言（AC3），**不设/不改任何 required check**（归 #104），**不碰** `docs/architecture.md`（归 #105）。详见 §3 与 §16。
 
 ## 1. 决策概览
@@ -12,12 +12,12 @@
   1. **新增** `.github/workflows/guard-selfcheck.yml`：触发用 **`pull_request_target`**（workflow 定义读自 **base/默认分支** ⇒ PR 改不动检查本体）；
   2. **判定不读被测 PR 的检出**：全程**不 `actions/checkout`**、不执行任何 PR 代码，只经 **GitHub REST API** 读 `head_sha` 侧的 `ci.yml`，解析后按**语义锚定**断言「`filters.image` 条目集合 ⊇ 基线 `{'.github/workflows/ci.yml'}`」；
   3. 同一 job 内附**自守断言**：本 workflow 文件在 head 侧仍须存在（防「删除/改名守门本体」，AC4 的机制化）。
-- **语义锚定（Q1）**：锚定 **action 名（`dorny/paths-filter`）+ 输入键（`filters.image`）+ 条目集合**，**不按** job / step 名或**行号**（行号易腐，承 0008 §11 注）。见 §6。
+- **语义锚定（Q1）**：锚定 **消费链语义结构** —— 由下游 job 的 `needs.<j>.outputs.<k>` 反查「**真正驱动门禁**」的那条 `dorny/paths-filter` 步骤（步骤 id 由该 job 的 `outputs.<k> = ${{ steps.<id>.outputs.* }}` 解出），再取该步骤 `filters.image` 的条目集合；**不按**「首个同名 action」、**不按** job / step 名、**更不按**行号（行号易腐，承 0008 §11 注）。见 §6.2。
 - **基线是硬编码于 base 侧本 workflow 的期望集合**（PR 不可篡改），observed 来自 head 侧 REST 读 ⇒ 消除「判据随 PR 检出漂移」的根因。
 - **AC3 零触碰**：本票**不改** `ci.yml` 的 `changes` job 判据（`filters.image` 条目集合）与 `image-guard` 的 `Assert runtime contract (non-root + /data writable)` step 一字。
 - **AC4 自守边界**已在 §9 逐条列清；**Q2 假红处置**见 §10；**Q4 顺序死锁**见 §11。
 - **零契约变更**：不触 `core-contracts`，不触发 `AGENTS.md`「core 改动即中止」闸门。
-- **一行不越界**：本票**仅新增 1 个 workflow + 1 个 spec 文档**；写动作前 pre-flight-check，范围蔓延即上报（见 §12 / §16）。
+- **一行不越界**：本票**新增 1 个 workflow + 1 个 spec 文档**，并在 `0009` §10 R4 追加 **1 行回指**（第 1 轮 D3）；写动作前 pre-flight-check，范围蔓延即上报（见 §12 / §16）。
 
 ## 2. 来源与关系（红线）
 
@@ -25,7 +25,7 @@
 |---|---|---|
 | **#103**（本规范命题载体） | 登记「守门不可自守删除自己」的残余边界；其 AC1–AC4 由本规范细化定稿（§7） | —— |
 | **规范 0008**（依赖） | 定义 `changes` + `image-guard` 两 job、白名单 6 条（含自守条目）、「CI 绿」口径；其 §10 R2 登记本残余边界、§11 定义「白名单行删除」为**合法回滚路径 2** | **不改** 0008 正文（0008 §7/§1 的口径改写属 #100 步4 / #104；本票不动，避免撞车） |
-| **规范 0009**（依赖） | §10 R4 把本项登记为「另开独立 build 票，设计不读 PR 自身检出的检查」；§13 声明范围外 | **不改** 0009 正文 |
+| **规范 0009**（依赖） | §10 R4 把本项登记为「另开独立 build 票，设计不读 PR 自身检出的检查」；§13 声明范围外 | 0009 正文**不改**；**唯一例外**：§10 R4 追加 **1 行**回指本项已由 0010 落地（本票第 1 轮 D3），不动其它段落 |
 | **ruleset `23927156`** | `required_status_checks` 目标构成归 **#104（真人执行）** | 本票**不设/不改**任何 required check |
 | **PR #97 / #94** | 「守门自证」触达面（白名单含工作流自身）的一手实测来源 | 其残余边界即本票；本票**不重开**触达面 |
 
@@ -65,7 +65,7 @@
 | E3 | `.github/workflows/ci.yml`（实测） | `changes` job 的 `dorny/paths-filter@v3` step，`filters.image` **共 6 条**，第 6 条逐字为 `.github/workflows/ci.yml` | 高（一手文件） |
 | E4 | GitHub Docs《Events that trigger workflows》`pull_request_target` | 见 §5.2 逐字引用 | 高（官方文档） |
 | E5 | GitHub Docs《Troubleshooting required status checks》 | 见 §5.2 / §11 逐字引用 | 高（官方文档） |
-| E6 | 本票**本地自举单测**（5 场景，`subprocess.run` 打桩喂入 fixtures） | `ok`→pass；删白名单行→fail；内层 filters 坏→fail；外层 YAML 坏→fail；守门文件被删→fail。见 §8.2 | 高（本地实测） |
+| E6 | 本票**本地自举单测**（11 场景，`subprocess.run` 打桩喂入 fixtures；第 1 轮审查后扩至覆盖诱饵遮蔽与结构不可识别） | 正向绿→pass；删白名单行→fail；**诱饵 step 遮蔽→fail（修订后闭合）**；外壳 / 结构不可识别→fail；守门文件被删→fail。见 §8.2 | 高（本地实测） |
 
 > **行号锚定注（承 0008 §11 / 0009 §4.3）**：本规范**不以 `ci.yml` 行号**作判定或文档锚点，一律按 **action 名 / job / step 名称 / YAML 解析后的语义结构**定位。本 workflow 的判据同样**不读行号**。
 
@@ -124,17 +124,22 @@
 新增文件 `.github/workflows/guard-selfcheck.yml`（与既有 `ci.yml` / `ci-gate.yml` / `qodana_code_quality.yml` **不冲突**）。要点：
 
 - `on.pull_request_target.types: [opened, synchronize, reopened]`（默认三型，显式书写）；
-- `permissions: {contents: read, pull-requests: read}`（最小权限；只读即可）；
-- 单 job（`name: Guard Self-Check`），单 step（bash → `python3`），无 `paths` / `paths-ignore` / `if` / `needs`（恒定上报）；
+- `permissions: {contents: read}`（最小权限；判定只读文件内容，不经任何 pull-requests 端点 ⇒ 不授 `pull-requests: read`）；
+- 单 job（`name: Guard Self-Check`），**三步**：① `actions/setup-python@v5`（固定 `python-version: "3.12"`）→ ② `pip install --quiet "pyyaml==6.0.3"`（**显式**获取判定依赖，消除「隐式依赖 runner 自带 PyYAML」的假设）→ ③ bash → `python3`（判定脚本）。无 `paths` / `paths-ignore` / `if` / `needs`（恒定上报）；
 - **不 `actions/checkout`**；判定全程经 `gh api`（用 `GITHUB_TOKEN`）读 head 侧文件。
 
 ### 6.2 判定锚定面（Q1）
 
-**锚定面 = 语义结构**，三层：
+**锚定面 = 消费链语义结构**，四层：
 
-1. **action 锚**：在解析后的 `ci.yml` 里定位 `uses` 以 `dorny/paths-filter` 开头的 step（**不按 job / step 名、不按行号**）；
-2. **输入锚**：读该 step 的 `with.filters`（一个内嵌 YAML 字符串），`safe_load` 后取 `image` 键的列表；
-3. **集合锚（下界）**：断言 `条目集合 ⊇ 基线 {'.github/workflows/ci.yml'}`。
+1. **消费点锚**：扫描 `ci.yml` 各 job 的 `if` 表达式，收集形如 `needs.<J>.outputs.<K>` 的引用 ⇒「被消费的 job 输出」即门禁消费点（本仓 = `image-guard` 的 `if: needs.changes.outputs.image == 'true'`）；
+2. **产出步锚**：由被消费 job 的 `outputs.<K> = ${{ steps.<ID>.outputs.* }}` 解出**产出步骤 id**（本仓 = `changes` job 的 `steps.filter`）——**不按 job / step 名、不按行号**；
+3. **输入锚**：该产出步骤须以 `dorny/paths-filter` 为 action；读其 `with.filters`（内嵌 YAML 字符串），`safe_load` 后取 `image` 键的列表；
+4. **集合锚（下界）**：断言每个门禁产出步骤的 `image` 条目集合 ⊇ 基线 `{'.github/workflows/ci.yml'}`（多个门禁产出步骤时**逐条**断言，任一缺失即红）。
+
+**为何不是「首个同名 action」**：若按「首个 `uses` 以 `dorny/paths-filter` 开头的 step 命中即返回」，PR 只需在**真实步骤之前**插一个 decoy `dorny/paths-filter` step（其 `filters.image` 含基线条目）即可**遮蔽**真实步骤的删行 ⇒ 假绿。改按**消费链**定位后，decoy（未被任何 job 输出引用）不参与判定 ⇒ 遮蔽面闭合（见 §9 B8、§8.2 场景 A/A'）。
+
+**失败归因（`if` 表达式解析的健壮性）**：解析只提取 `needs.<J>.outputs.<K>` 与 `steps.<ID>.outputs.` 两个**引用 token**（正则），**不解析**表达式文法 ⇒ 复合条件（`&&` / `||`）、引号包裹、`needs` 多依赖均不影响命中；提取不到 / job 或 step 解析不出 / id 缺失或重复 / action 非 dorny / `filters` 非串 / `image` 非列表等**任一不可识别情形**，一律 `return None` ⇒ 走**显式 fail-closed** 报错（`could not locate ...`），**不**退回「首个同名 action」，也**不**抛裸异常。
 
 **为什么是「⊇ 下界」而非「== 相等」**：白名单**新增**条目（如未来再加第三个 workflow 自守）应**允许**（不假红）；只有**删掉**基线条目才红 ⇒ 下界断言精确表达不变量「自守条目必须仍在」。基线集合现仅含 1 条（本票残余边界的**核心条目**）；扩展基线 = 往 `BASELINE_IMAGE_ENTRIES` 加条目，机制不变。
 
@@ -150,11 +155,11 @@
 
 > 对应 issue #103 的 AC①–④ 定稿；全部可判定。
 
-- [ ] **AC1（删行必红）**：存在一条检查，在「删掉 `ci.yml` 中 `filters.image` 的自守条目 `.github/workflows/ci.yml`」的 PR 上**必然失败**。
-- [ ] **AC2（不读 PR 检出自举测试）**：该检查的判定**不依赖被测 PR 自身检出的文件内容**；须有自举测试 —— 构造一个删掉该行（或改坏 workflow 语法）的 PR，观察该检查**仍报错**。
-- [ ] **AC3（不改既有守门）**：**不改变**现有镜像守门的判据与其运行契约断言（`changes` 判据 + `Assert runtime contract (non-root + /data writable)` step 一字不动）。
-- [ ] **AC4（自守边界）**：明确写清本检查**自身的自守边界**（谁来保护它不被同样的手法绕过）——见 §9。
-- [ ] **AC5（零残留）**：自举用的 trail PR **关而未合**、trail 分支**已删**；无遗留新增分支 / PR。
+- [x] **AC1（删行必红）**：存在一条检查，在「删掉 `ci.yml` 中 `filters.image` 的自守条目 `.github/workflows/ci.yml`」的 PR 上**必然失败**。——**判定逻辑已闭合**：打桩复算下「朴素删行 / 诱饵遮蔽 / 结构不可识别」均报红（§8.2）；**线上实测待合并后回填**（§8.3，与 AC2 同批）。
+- [ ] **AC2（不读 PR 检出自举测试）**：该检查的判定**不依赖被测 PR 自身检出的文件内容**；须有自举测试 —— 构造一个删掉该行（或改坏 workflow 语法）的 PR，观察该检查**仍报错**。——**待合并后回填**（结构性时序依赖，§8.1；三段式计划见 §8.3）。
+- [x] **AC3（不改既有守门）**：**不改变**现有镜像守门的判据与其运行契约断言（`changes` 判据 + `Assert runtime contract (non-root + /data writable)` step 一字不动）。——**已闭合**：`git diff main...HEAD -- .github/workflows/ci.yml` 为空。
+- [x] **AC4（自守边界）**：明确写清本检查**自身的自守边界**（谁来保护它不被同样的手法绕过）——见 §9。——**已闭合**（§9 B1–B8）。
+- [ ] **AC5（零残留）**：自举用的 trail PR **关而未合**、trail 分支**已删**；无遗留新增分支 / PR。——**待合并后回填**（trail 尚未执行）。
 
 ## 8. 落地与自举实测
 
@@ -164,24 +169,38 @@
 
 ### 8.2 本地自举单测（已执行，方法 + 结果）
 
-在合并前，先以**等价打桩**验证判定逻辑（不打网络）：将 workflow 的判定脚本抽出，用桩替换 `gh api`（喂入 fixtures 的 head 侧文件），跑 5 个场景：
+在合并前，先以**等价打桩**验证判定逻辑（不打网络）：将 workflow 的判定脚本抽出，用桩替换 `gh api`（喂入 fixtures 的 head 侧文件），跑 **11 个场景**。**第 1 轮审查发现「诱饵 step 遮蔽」假绿后，本表已扩至含诱饵与结构不可识别用例（A / A' / B / D*），并据此把锚定面从「首个同名 action」改为「消费链」（§6.2）。**
 
 | 场景 | head 侧构造 | 期望 | 实测 |
 |---|---|---|---|
-| `ok` | `ci.yml` 原样 + 守门文件在 | pass | ✅ exit 0，输出 `Guard Self-Check PASSED` |
-| `removed` | 删掉 `- '.github/workflows/ci.yml'` 一行 | **fail** | ✅ exit 1，`whitelist self-entry removed: ['.github/workflows/ci.yml'] not in filters.image` |
-| `broken`（内层） | `filters` 内嵌 YAML 坏 | fail | ✅ exit 1，`could not locate ... filters.image` |
-| `brokenouter`（外层） | `ci.yml` 顶层 YAML 坏 | fail | ✅ exit 1，`.github/workflows/ci.yml YAML invalid at head ...` |
-| `noguard` | 删掉守门文件 `guard-selfcheck.yml` | fail | ✅ exit 1，`guard workflow ... not found at head` |
+| E `ok` | `ci.yml` 原样（未改动）+ 守门文件在 | pass | ✅ exit 0，输出 `Guard Self-Check PASSED` |
+| C `removed` | 删掉 `- '.github/workflows/ci.yml'` 一行（无诱饵） | **fail** | ✅ exit 1，`whitelist self-entry removed: ['.github/workflows/ci.yml'] not in filters.image` |
+| **A**（D1 核心） | 真实步骤**之前**插 decoy `dorny/paths-filter` step（`filters.image` 含基线），并删掉真实步骤的基线条目 | **fail** | ✅ exit 1，同上 `whitelist self-entry removed`（decoy 不再遮蔽） |
+| **B** | 插 decoy（含基线），真实步骤基线条目**保留** | **pass** | ✅ exit 0（不得假红） |
+| **A'** | decoy 复用 `id: filter` + 真实步骤删基线条目 | **fail** | ✅ exit 1，`could not locate ...`（重复 id ⇒ fail-closed） |
+| **D1** | `ci.yml` 顶层 YAML 坏 | fail | ✅ exit 1，`.github/workflows/ci.yml YAML invalid at head ...` |
+| **D2** | `ci.yml` 顶层为序列（非映射） | fail | ✅ exit 1，`could not locate ...`（显式 fail-closed，非 `AttributeError`） |
+| **D3** | 门禁产出步骤的 `uses` 非 `dorny/paths-filter` | fail | ✅ exit 1，`could not locate ...` |
+| **D4** | 门禁步骤 `with.filters` 非字符串 | fail | ✅ exit 1，`could not locate ...` |
+| **D5** | `filters.image` 非列表 | fail | ✅ exit 1，`could not locate ...` |
+| F `noguard` | 删掉守门文件 `guard-selfcheck.yml` | fail | ✅ exit 1，`guard workflow ... not found at head` |
 
-⇒ **AC1 判定逻辑（删行必红）本地成立**；**残余边界 ②（语法失效）本地成立**；**AC4 自守断言（守门文件被删即红）本地成立**。线上自举（真实 GHA run）见 §8.1 时序。
+⇒ **AC1 判定逻辑（删行必红，含诱饵遮蔽面）本地成立**；**残余边界 ②（语法失效 / 结构不可识别，均走显式 fail-closed、无裸 traceback）本地成立**；**AC4 自守断言（守门文件被删即红）本地成立**。线上自举（真实 GHA run）见 §8.1 时序。
 
-（本地环境注：本机 Git Bash 对 shell heredoc 报 `cannot create temp file for here-document`，属**本地沙箱限制**，非脚本缺陷；GitHub `ubuntu-latest` 支持 heredoc。故本地以「抽取脚本 + 打桩 `subprocess.run`」等价执行。）
+（复算方式：抽取 workflow 内嵌 python 判定脚本 → 桩替换 `subprocess.run` 喂入 fixtures 的 head 侧文件 → 逐场景核对退出码。本地环境注：本机 Git Bash 对 shell heredoc 报 `cannot create temp file for here-document`，属**本地沙箱限制**，非脚本缺陷；GitHub `ubuntu-latest` 支持 heredoc。故本地以「抽取脚本 + 打桩 `subprocess.run`」等价执行。）
 
-### 8.3 线上自举实测（**待合并后执行**，判据占位）
+### 8.3 线上自举实测计划（**待合并后执行**，三段式判据占位）
 
-- 基于合并后 `main` 开 trail PR `test/103-<slug>`：内容 = 删掉白名单自守条目一行（可选追加：改坏 `ci.yml` 语法）。
-- 观测 `Guard Self-Check` **报红**，记录 **run id** + `gh pr checks` / `gh run view` 实证。
+为避免「脚本在 runner 上根本跑不起来 ⇒ 恒红」与「断言真生效 ⇒ 删行红」不可区分，线上 trail **必须**含**正向绿分支**，构成**三段式**（缺 ① 则 ②③ **不可证伪**）：
+
+1. **① 正向绿基线**（**必要条件**）：在一个**未改动**白名单的正常 PR 上，`Guard Self-Check` 必须为**绿** ⇒ 证明「环境可跑通 + 判定可放行」；**若 ① 从未跑过，「②③ 红」无法区分是「断言真生效」还是「脚本在 runner 上根本跑不起来 ⇒ 恒红」（第 1 轮审查的必答结论）。**
+2. **② 删行必红**：在 trail PR 上删掉白名单自守条目一行 ⇒ `Guard Self-Check` 必须**报红**。
+3. **③ 语法坏必红**：改坏 `ci.yml` YAML 语法（或造结构不可识别）⇒ `Guard Self-Check` 必须**报红**。
+
+执行要点：
+
+- ①②③ 均基于合并后 `main` 进行（① 可直接在后续任一正常 PR 上观测；②③ 另开 trail PR `test/103-<slug>`）。
+- 每次观测记录 **run id** + `gh pr checks` / `gh run view` 实证。
 - **无论成败：关 PR（不合并）+ 删分支，并复算 404**（零残留，AC5）。
 - 证据回填本节 + issue #103 评论。
 
@@ -197,9 +216,10 @@
 | B4 | **改 ruleset**（把本检查移出 required / 改 `workflows` rule / 加 `bypass_actors`） | **无法**由 CI 自保（配置面） | **admin-only**；E1 现 `bypass_actors=[]`、`current_user_can_bypass="never"`；**任何人（含 owner）改 ruleset 都留审计** |
 | B5 | **commit message 跳过**（`[skip ci]` 等） | **已免疫**：`pull_request_target` 不受 skip 指令影响（§5.2 官方逐字） | —— |
 | B6 | **`pull_request_target` 事件自身语义边界** | 运行在 **base 上下文**（`GITHUB_SHA`=默认分支末次提交）⇒ 判定**必须显式读 `head.sha`**（已落实，§6.3）；**不 checkout / 只读权限**规避「pwn request」安全面 | 分支名「形似 SHA」等**可能不触发**「`pull_request_target`」的官方边界（极端），登记于 §13 |
-| B7 | **本检查被 PR 重命名 job / 挪行** | **已免疫**：锚定 action 名 + 输入键，**不按 job/step 名或行号** | —— |
+| B7 | **本检查被 PR 重命名 job / 挪行** | **已免疫**：锚定**消费链结构**（`needs.<j>.outputs.<k>` → `steps.<id>`），**不按 job/step 名或行号** | —— |
+| B8 | **插入诱饵 `dorny/paths-filter` step 遮蔽真实步骤**（真实步骤之前部署一个同 action、`filters.image` 含基线条目的 decoy） | **已机制化**：判定按**消费链**定位「真正驱动门禁」的步骤 ⇒ decoy（**未被任何 job 输出引用**）不参与判定，真实步骤删行即红（§8.2 场景 A）；decoy 复用同一 `id` ⇒ 结构歧义 ⇒ fail-closed（场景 A'） | 若消费链本身被重构（改名 `needs` / `outputs` / 改写 `if` 表达式）⇒ 定位不到 ⇒ **红并要求 review**（fail-closed，§13 R1） |
 
-**一句话**：**B1/B5/B7 已机制化闭合；B2/B3/B4 是任何 CI 自守检查的**结构性下限**（merge 后定义 / 配置面 / admin 面），本票**如实登记**、由 review 与 ruleset 兜底，**不假装能自保**。
+**一句话**：**B1/B5/B7/B8 已机制化闭合；B2/B3/B4 是任何 CI 自守检查的**结构性下限**（merge 后定义 / 配置面 / admin 面），本票**如实登记**、由 review 与 ruleset 兜底，**不假装能自保**。
 
 ## 10. 假红处置（Q2）
 
@@ -234,7 +254,8 @@
 | **改（本票，仅回填实测）** | `docs/specs/0010-ci-guard-selfcheck.md` §8.3 | 合并后回填 trail 自举实测结果（run id / 输出） |
 | **不改** | `.github/workflows/ci.yml` | `changes` 判据（`filters.image` 条目集合）与 `image-guard` 契约断言 step 一字不动（AC3） |
 | **不改** | `.github/workflows/ci-gate.yml` / `qodana_code_quality.yml` | 无 |
-| **不改** | `docs/specs/0008-*.md` / `0009-*.md` | 无（其口径改写属 #100 步4 / #104） |
+| **改（D3，仅 1 行）** | `docs/specs/0009-ci-required-status-gate.md` §10 R4 | 追加**一行回指**：本项已由 `0010` 落地（issue #103 / PR #111）。**只此一行，不动 0009 其它段落** |
+| **不改** | `docs/specs/0008-*.md` | 无（其口径改写属 #100 步4 / #104；同步归 #100 步4，避免撞车） |
 | **不改** | `docs/architecture.md` | 无（规范索引同步归 #105） |
 | **不改** | ruleset `23927156` | 无（required 构成归 #104，真人执行） |
 | **不改** | Java 源码 / `pom.xml` / `Dockerfile` / `docker-compose.yml` / `core-contracts` | 无 |
@@ -253,13 +274,13 @@
 
 | 编号 | 项 | 分级 | 处置 |
 |---|---|---|---|
-| **R1** | **白名单结构性重构的潜在假红**：若未来把 `filters.image` 键改名、或把 `dorny/paths-filter` 换掉 ⇒ 本检查「定位不到」而红 | `non-blocking` | 红即**要求 review**（守门结构变更本应被看见）；当前非 required，不阻断。语义锚定已把「改名 job/step」「挪行」排除在假红外（B7） |
+| **R1** | **门禁结构重构的潜在假红**：若未来重命名 `filters.image` 键、换掉 `dorny/paths-filter`、或**重构消费链**（`needs` / `outputs` / `if` 表达式写法变更）⇒ 本检查「定位不到」而红 | `non-blocking` | 红即**要求 review**（门禁结构变更本应被看见）；当前非 required，不阻断。消费链锚定已把「改名 job/step」「挪行」「插入诱饵 step」排除在假红外（B7 / B8） |
 | **R2** | **合法回滚（0008 §11 路径 2）触发红**（Q2） | `non-blocking`（本票不阻断） | 见 §10：合法回滚**照常可合入**（非 required）；若 #104 纳入 required，须**先**设计逃生舱（登记为 #104 待办） |
 | **R3** | **B2/B3/B4 结构性下限**：merge 后定义 / 配置面 / admin 面无法自保（Q3） | `non-blocking` | 如实登记（§9），由 **review + ruleset** 兜底；**不假装能自保** |
 | **R4** | **`pull_request_target` 的极端不触发边界**：官方说明「形似 SHA 的分支名可能不触发本事件」 | `non-blocking` | 本仓分支命名（`ci/**`、`test/**` 等）不落该模式；登记备查 |
 | **R5** | **并行 API 抖动的假红**：`gh api` 遇瞬时错误 ⇒ 本检查 fail-closed（读不到即红） | `non-blocking` | 本票**有意 fail-closed**（守门宁严勿松）；失败信息含 `api_err` 便于区分 404 / 瞬时错误；重跑即可清 |
 | **R6** | **任务卡 1.5 与实测不一致**：卡记 required=`[]`，实测 required=`[CI Gate]`（E1） | 信息 | 本票**不涉 required**，不影响交付；已在 §4.2 E1 登记，并**上报主理人** |
-| **R7** | **依赖 `pyyaml`**：workflow 内 `pip install pyyaml`（runner 网络依赖） | `non-blocking` | 固定 `python-version` + `--quiet` 安装；`pyyaml` 为纯 Python 小包，成熟稳定 |
+| **R7** | **依赖 `pyyaml`**：workflow 内**显式** `actions/setup-python@v5`（固定 `python-version: "3.12"`）+ `pip install --quiet "pyyaml==6.0.3"`（runner 网络依赖） | `non-blocking` | **已消除隐式依赖**（不再依赖 runner 自带 PyYAML 这一未声明假设）；`pyyaml` 为纯 Python 小包、成熟稳定；固定版本以保确定性；若安装失败 ⇒ 显式噪声（与「删行必红」的混淆源已由三段式 trail 的正向绿分支排除，§8.3） |
 
 **blocking 未知点：0。**
 
@@ -274,11 +295,12 @@
 
 | 文档 | 建议变更 | 归属 |
 |---|---|---|
-| `docs/specs/0008-*.md` §10 R2 处置列 | 加一句「残余边界 ① 已由 0010 承接」 | 后续文档票 / #104 |
+| `docs/specs/0009-*.md` §10 R4 | 加一行回指「本项已由 `0010` 落地（issue #103 / PR #111）」 | **已完成**（本票 D3，第 1 轮修复；仅此 1 行） |
+| `docs/specs/0008-*.md` §10 R2 处置列 | 加一句「残余边界 ① 已由 0010 承接」 | 后续文档票 / #100 步4（改 0008 会撞 #100 写面，本票**不动**） |
 | `docs/architecture.md`「规范索引」 | 补入 `0010`（及 0008 / 0009） | **#105** |
 | `README.md` | 如需说明「守门自守」检查，可同步 | 建议，非必须 |
 
-（本规范仅**提出建议**，不代替写。）
+（本规范仅**提出建议**，不代替写；除 `0009` §10 R4 一行回指（本票 D3）外，其余归后续票。）
 
 ## 16. 明确不做的事（范围外）
 

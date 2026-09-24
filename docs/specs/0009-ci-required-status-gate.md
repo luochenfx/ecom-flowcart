@@ -213,7 +213,7 @@ jobs:
 | **R1** | **门禁强度实质下降**：`CI Gate` 为活性令牌，不校验任何实质内容（§5.5 代价 3） | `non-blocking`（真人已知情） | 显式登记；若日后要求更强门禁 ⇒ 回退 C4（见 §11） |
 | **R2** | **非 docs PR 三件套红了不阻合并**（§5.5 代价 1） | `non-blocking`（真人已知情） | 显式登记；信号口径仍在（三件套照跑） |
 | **R3** | **docs-only PR 无三件套信号**（§5.5 代价 2） | `non-blocking` | 显式登记；文档 PR 的 CI 信号 = 仅 `CI Gate` |
-| **R4** | **#94-①「守门不可自守删除自己」**（filters 读自**被测 PR 自身检出** ⇒ 删掉白名单那行的 PR 自身不被 `image-guard` 覆盖） | `non-blocking`（**本命题外**） | 在 C3 下**严格弱于 C4**（`Image Build Guard` 连 required 都不是）⇒ **另开独立 build 票**，设计一个**不读 PR 自身检出**的检查（例如经 REST 读 PR diff 判定白名单行是否被删）。**本规范不顺手做**（见 §13） |
+| **R4** | **#94-①「守门不可自守删除自己」**（filters 读自**被测 PR 自身检出** ⇒ 删掉白名单那行的 PR 自身不被 `image-guard` 覆盖） | `non-blocking`（**本命题外**） | 在 C3 下**严格弱于 C4**（`Image Build Guard` 连 required 都不是）⇒ **另开独立 build 票**，设计一个**不读 PR 自身检出**的检查（例如经 REST 读 PR diff 判定白名单行是否被删）。**本规范不顺手做**（见 §13）。**（本项已由 [`0010`](./0010-ci-guard-selfcheck.md) 落地 —— issue #103 / PR #111。）** |
 | **R5** | **步4 对 0008 的口径改写未落地前，0008 §7 的旧口径与 v3 并存** | `non-blocking` | 步4 落地后消除；期间以本规范 §5.4 为**权威口径**（v3） |
 | **R6** | **规则执行者权限**：步3 ruleset `PUT` 需 `admin`，agent token 无 `admin:org` | `non-blocking` | 由**真人执行**（真人已授权）；agent 只核对 AC① |
 | **R7** | **`docs/architecture.md` 规范索引陈旧**（E10：仍 `0001–0007`） | `non-blocking` | 步4 一并补齐（0008 + 0009） |
