@@ -38,6 +38,14 @@ import java.util.Set;
  * <p>与 SPI 契约一致（{@link PlatformAdapterProvider#getCapability(Class)} 允许返回缓存实例）；
  * 与 {@code adapter-1688} 的 provider 形态对称——那里每次新建是因 1688 能力<b>无内部状态</b>，
  * 本模块的能力<b>有状态</b>，故必须单例。
+ *
+ * <h2>线程安全约束（登记，非实现变更）</h2>
+ * 记忆化后 {@link #getCapability(Class)} 返回的是<b>进程内共享的单例能力实例</b>——同一次装配下
+ * 所有解析路径拿到同一个 {@link FakeSalesPublish}。该实例内部以<b>无同步集合</b>持有脚本序列
+ * （{@code script}）与调用留痕（{@code addCalls} / {@code reconcileCalls}），且脚本消费是
+ * {@code isEmpty} + {@code remove(0)} 的复合操作，因此<b>并发调用不受保护</b>（简单换成同步集合
+ * 也不能消除该复合竞争）。当前消费方（e2e / 既有测试）均为<b>串行使用</b>；若将来出现并发铺货
+ * 需求，需重新评估本实例的共享与同步语义。
  */
 public final class FakeSalesAdapterProvider implements PlatformAdapterProvider {
 
