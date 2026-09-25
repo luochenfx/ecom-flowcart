@@ -32,7 +32,8 @@ app:
   # 逗号串；解析为角色集合（api / worker / scheduler）。默认单机合一。
   # 容器可经命令行 --app.role=api 覆盖为"只起 REST、不起 worker"。
   role: api,worker,scheduler
-  # 内容链媒体归档根（容器建议指向挂载卷）。
+  # 内容链媒体归档根。⚠️ 非权威来源（v1 未由 app 代码消费）：生产媒体根权威 = env
+  # FLOWCART_MEDIA_ROOT（specs/0011 §4 / #96）；改此键不影响运行行为，仅保留与 spec §7.2 键位对齐。
   media-root: /data/media
   # 文档库根（v1 OrderStore / PublishStateStore 仍为 JSON 文件实现，specs/0007 §8.5）。
   data-root: /data/flowcart

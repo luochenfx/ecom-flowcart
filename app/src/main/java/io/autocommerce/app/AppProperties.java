@@ -24,6 +24,9 @@ import java.util.Map;
  * {@code app.media-root} 与 {@code app.flow.channels} 是 spec §7.2 声明的配置面，
  * v1 尚未由 app 代码读取（媒体根由内容 SPI provider 从其环境变量 {@code FLOWCART_MEDIA_ROOT} 取；
  * chain 由请求体声明）——在此保留为声明式配置，避免与 spec 键位脱节。
+ *
+ * <p>{@code app.media-root} <b>非权威</b>，仅为 spec §7.2 声明面；媒体根权威 = 环境变量
+ * {@code FLOWCART_MEDIA_ROOT}（specs/0011 §4）。字段 / getter / setter 一并保留，仅作声明登记。
  */
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
