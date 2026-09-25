@@ -148,6 +148,10 @@ services:
       # 持久化 spec §7.2 数据根：/data/media（媒体归档）+ /data/flowcart（JSON 文档库）。
       # 镜像内已预建 /data 并 chown 给非 root 用户（无卷也可写），命名卷使其跨容器生命周期留存。
       - app_data:/data
+    # 内容链媒体根（specs/0011 权威来源）：内容 SPI provider 经该 env 读取；指向镜像预建并 chown 的 /data/media。
+    # 沿用本文件既有 ${VAR:-default} 回退纪律（同 POSTGRES_USER / RABBITMQ_USER），可用 .env 覆盖。
+    environment:
+      FLOWCART_MEDIA_ROOT: ${FLOWCART_MEDIA_ROOT:-/data/media}
     depends_on:
       postgres:
         condition: service_healthy
