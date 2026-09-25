@@ -173,4 +173,56 @@
       </plugins>
     </pluginManagement>
   </build>
+
+  <!--
+    e2e 验收 profile（#75 / specs/0007 §9.2/§9.3/§10 步 8）——**默认不激活**（仅 -Pe2e 时生效）。
+
+    语义：把 `mvn clean verify -Pe2e` 变成"真链路验收"——连真 Temporal server + 真 Postgres，
+    经 REST 边界（POST /api/v1/ingest → 编排链 → GET /api/v1/flows/{workflowId}）跑四条路径。
+
+    为什么"默认不跑"是硬红线（AC-2）：默认 `mvn clean test` 只走 surefire，其默认用例匹配
+    {*Test, Test*, *Tests, *TestCase}——e2e 用例命名以 `*IT` 结尾，天然落在 surefire 之外；
+    failsafe（默认匹配 *IT）只在本 profile 内绑定 integration-test + verify goals。故 e2e 不进默认 CI，
+    也不需要任何 .github/workflows 改动。
+
+    环境变量（failsafe 只在 e2e 的 forked JVM 注入；surefire 的 JVM 不受影响）：
+      FLOWCART_LLM_BASE_URL —— 内容链 SPI provider（ContentAiStepProvider 无参构造）在**装配期**
+        从 env 读 LLM 端点；测试 JVM 无法改 env，故必须在此把固定 stub 地址注入。
+        端口 41889 须与 app 测试内 FlowAssemblyE2EIT 的 STUB_PORT 常量一致（测试会自校验，不一致即明确失败）。
+      FLOWCART_MEDIA_ROOT   —— 内容链媒体归档根（默认 target/media）；显式指向 target/e2e-media 隔离产物。
+  -->
+  <profiles>
+    <profile>
+      <id>e2e</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>**/*IT.java</include>
+              </includes>
+              <environmentVariables>
+                <FLOWCART_LLM_BASE_URL>http://localhost:41889/v1</FLOWCART_LLM_BASE_URL>
+                <FLOWCART_MEDIA_ROOT>target/e2e-media</FLOWCART_MEDIA_ROOT>
+              </environmentVariables>
+            </configuration>
+            <executions>
+              <!-- 执行 id 取 "default"：与 spring-boot-starter-parent 在 pluginManagement 里为
+                   failsafe 预置的 default 执行（goals = integration-test + verify）合并为**一个**，
+                   否则同一 IT 会被两个执行各跑一遍。 -->
+              <execution>
+                <id>default</id>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

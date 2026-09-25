@@ -26,11 +26,34 @@ import java.util.Set;
  * <p>行为可控：底层 {@link FakeSalesPublish} 支持脚本化四种处置
  * （{@code PUBLISHED} / {@code AMBIGUOUS} / {@code REJECTED} / {@code RETRYABLE}），
  * 供端到端 demo 驱动铺货状态机全路径（成功 / 歧义挂起-裁定 / 业务拒绝 / 可重试）。
+ *
+ * <h2>能力实例的记忆化（每 provider 一个 {@link FakeSalesPublish} 单例）</h2>
+ * {@link #getCapability(Class)} 对同一能力类型<b>恒返回同一实例</b>（构造期创建并缓存），而非每次
+ * {@code new}。这不是优化，而是正确性要求：{@link FakeSalesPublish} 带内部状态（脚本化结局序列 +
+ * 调用留痕），而装配侧的 {@code CapabilityResolver.lazy(...)} 会缓存"首次解析到的能力实例"——
+ * 若本 provider 每次返回新实例，则"测试从 {@code AdapterHost} 拿到并 {@code script(...)} 的那个实例"
+ * 与"惰性代理内部实际调用的那个实例"不是同一个，脚本永不生效（歧义挂起路径无法落地）。
+ * 恒返回同一实例后，二者重合，脚本与留痕对装配路径可见。
+ *
+ * <p>与 SPI 契约一致（{@link PlatformAdapterProvider#getCapability(Class)} 允许返回缓存实例）；
+ * 与 {@code adapter-1688} 的 provider 形态对称——那里每次新建是因 1688 能力<b>无内部状态</b>，
+ * 本模块的能力<b>有状态</b>，故必须单例。
+ *
+ * <h2>线程安全约束（登记，非实现变更）</h2>
+ * 记忆化后 {@link #getCapability(Class)} 返回的是<b>进程内共享的单例能力实例</b>——同一次装配下
+ * 所有解析路径拿到同一个 {@link FakeSalesPublish}。该实例内部以<b>无同步集合</b>持有脚本序列
+ * （{@code script}）与调用留痕（{@code addCalls} / {@code reconcileCalls}），且脚本消费是
+ * {@code isEmpty} + {@code remove(0)} 的复合操作，因此<b>并发调用不受保护</b>（简单换成同步集合
+ * 也不能消除该复合竞争）。当前消费方（e2e / 既有测试）均为<b>串行使用</b>；若将来出现并发铺货
+ * 需求，需重新评估本实例的共享与同步语义。
  */
 public final class FakeSalesAdapterProvider implements PlatformAdapterProvider {
 
     /** 平台标识：与 specs/0007 §9.1 一致（e2e profile 下 app 的装配指向本平台）。 */
     public static final String PLATFORM = "fake-sales";
+
+    /** 构造期创建、全生命周期复用的铺货能力单例（见类 javadoc「能力实例的记忆化」）。 */
+    private final PublishCapability publishCapability = new FakeSalesPublish();
 
     /** SPI 装配用无参构造（行为默认 PUBLISHED；脚本经 {@link #script} 追加）。 */
     public FakeSalesAdapterProvider() {
@@ -50,7 +73,7 @@ public final class FakeSalesAdapterProvider implements PlatformAdapterProvider {
     @SuppressWarnings("unchecked")
     public <T extends Capability> T getCapability(Class<T> capabilityType) {
         if (capabilityType == PublishCapability.class) {
-            return (T) new FakeSalesPublish();
+            return (T) publishCapability;
         }
         throw new IllegalArgumentException(
                 "adapter-fake 未实现能力: " + capabilityType.getName() + "（实现清单见 capabilities()）");
