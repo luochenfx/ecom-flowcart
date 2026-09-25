@@ -141,6 +141,14 @@
       <artifactId>archunit-junit5</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- e2e（#75，profile=e2e / failsafe）：可控 HTTP stub 冒充外部边界——
+         1688 offer 端点（source_ref.url 直连模式）+ OpenAI-compatible LLM 端点 + 媒体源。
+         版本由根 pom <dependencyManagement> 锁为 3.13.2（Jetty 收口 11，见根 pom 注释）。仅 test scope。 -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
