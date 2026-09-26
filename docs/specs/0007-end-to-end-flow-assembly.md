@@ -356,7 +356,7 @@ ALTER TABLE catalog_product
 | 命令 | 内容 | 前置 |
 |---|---|---|
 | `mvn clean test` | 全 reactor 单测 + in-process Temporal 测试 | 无（不需要 docker） |
-| `mvn clean verify -Pe2e` | 端到端：真 Temporal server + 真 Postgres + 真 RabbitMQ | `docker compose up -d` |
+| `mvn clean verify -Pe2e` | 端到端：真 Temporal server + 真 Postgres（**不涉 RabbitMQ**——`EventPublisher` 仍为 `Noop`，本规范不引入事件驱动链路，见 §12） | `docker compose up -d` |
 
 **CI 口径**：默认只跑 `mvn clean test`。**e2e 不进默认 CI**（起 5 个容器的成本与不稳定性不划算），作为手动 / 夜间验收。
 
