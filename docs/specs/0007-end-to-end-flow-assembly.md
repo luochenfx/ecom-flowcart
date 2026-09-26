@@ -2,7 +2,7 @@
 
 > 来源：Grilling session（2026-09-21），议题「跑通从采集到铺货的全流程」
 > 依赖：[ADR-0002（Temporal）](../adr/0002-temporal-for-workflow-orchestration.md)、[ADR-0009（模块化单体 + 装配根）](../adr/0009-modular-monolith-and-deployment-view.md)、[规范 0001（铺货幂等）](./0001-listing-publish-idempotency.md)、[规范 0002（商品模型）](./0002-product-catalog-model.md)、[规范 0006（AI Step / 内容链）](./0006-ai-step-model.md)
-> 状态：v1 设计期决议（**实现期总纲**，衔接 #24 发布准备）
+> 状态：v1 设计期决议（**实现期总纲**，衔接 #24 发布准备）—— §10 九步已全部落地（#69–#75 合入 main，2026-09-25）
 > 范围声明：本规范**只解决"链路能跑通"**。以下问题明确**不在本规范范围**（见 §9）：消费并发受控、幂等与去重的进阶形态、失败分类与退避策略、背压与优先级。
 
 ## 1. 决策概览
@@ -299,13 +299,15 @@ CREATE TABLE catalog_product (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 const）
+-- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 required + const）
+-- 注意：不能写成 `doc ->> 'schema_version' = '0.1.0'` —— 三值逻辑下会放过缺键 / 值为 null 的文档（见下决策明细）
 ALTER TABLE catalog_product
     ADD CONSTRAINT catalog_product_schema_version
-    CHECK (doc ->> 'schema_version' = '0.1.0');
+    CHECK (doc ? 'schema_version' AND doc -> 'schema_version' = '"0.1.0"'::jsonb);
 ```
 
 **决策明细**：
+- **CHECK 用两项合取，不做 `->>` 文本抽取**：`doc ->> 'schema_version' = '0.1.0'` 在三值逻辑下会**放过不合规文档**——键缺失时 `->>` 返回 NULL，`NULL = '0.1.0'` 求值为 NULL，而 CHECK 视 NULL 为通过 ⇒ 缺 `schema_version` 的文档被接受（它是 `product-catalog.schema.json` 的 `required` + `const`）。真 Postgres 16 实测：`->>` 版本接受 `{"nope":1}` 与 `{"schema_version":null}` 两条；两项合取版本只接受 `{"schema_version":"0.1.0"}`。`doc ? 'k'` 保证键存在，`doc -> 'k' = '"0.1.0"'::jsonb` 直接比 jsonb 值（不做文本抽取），键缺失与值为 null / 数字 / 数组都落到「不相等」而非 NULL。**本仓 JSONB 判等一律禁 `->>`**（本节首版误写作 `->>`，2026-09-26 就地订正为与已发布 `V1__catalog.sql` 一致的形式；`V1__catalog.sql` 与 `app/src/main/resources/db/migration/README.md` 注释里「spec §8.2 的写法」均指该首版——已应用脚本按纪律不原地编辑）。
 - **不加 GIN 索引**：v1 无按 doc 内容查询的需求；`listSpuIds()` 只需扫主键。
 - **不加来源平台列**：平台信息在 `doc` 内，加列即第二真相源。
 - **加 `created_at`**：成本为零，未来排查需要。
@@ -354,7 +356,7 @@ ALTER TABLE catalog_product
 | 命令 | 内容 | 前置 |
 |---|---|---|
 | `mvn clean test` | 全 reactor 单测 + in-process Temporal 测试 | 无（不需要 docker） |
-| `mvn clean verify -Pe2e` | 端到端：真 Temporal server + 真 Postgres + 真 RabbitMQ | `docker compose up -d` |
+| `mvn clean verify -Pe2e` | 端到端：真 Temporal server + 真 Postgres（**不涉 RabbitMQ**——`EventPublisher` 仍为 `Noop`，本规范不引入事件驱动链路，见 §12） | `docker compose up -d` |
 
 **CI 口径**：默认只跑 `mvn clean test`。**e2e 不进默认 CI**（起 5 个容器的成本与不稳定性不划算），作为手动 / 夜间验收。
 
