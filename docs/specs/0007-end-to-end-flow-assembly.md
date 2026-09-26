@@ -299,13 +299,15 @@ CREATE TABLE catalog_product (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 const）
+-- 不合规文档写不进去（schema_version 是 product-catalog.schema.json 的 required + const）
+-- 注意：不能写成 `doc ->> 'schema_version' = '0.1.0'` —— 三值逻辑下会放过缺键 / 值为 null 的文档（见下决策明细）
 ALTER TABLE catalog_product
     ADD CONSTRAINT catalog_product_schema_version
-    CHECK (doc ->> 'schema_version' = '0.1.0');
+    CHECK (doc ? 'schema_version' AND doc -> 'schema_version' = '"0.1.0"'::jsonb);
 ```
 
 **决策明细**：
+- **CHECK 用两项合取，不做 `->>` 文本抽取**：`doc ->> 'schema_version' = '0.1.0'` 在三值逻辑下会**放过不合规文档**——键缺失时 `->>` 返回 NULL，`NULL = '0.1.0'` 求值为 NULL，而 CHECK 视 NULL 为通过 ⇒ 缺 `schema_version` 的文档被接受（它是 `product-catalog.schema.json` 的 `required` + `const`）。真 Postgres 16 实测：`->>` 版本接受 `{"nope":1}` 与 `{"schema_version":null}` 两条；两项合取版本只接受 `{"schema_version":"0.1.0"}`。`doc ? 'k'` 保证键存在，`doc -> 'k' = '"0.1.0"'::jsonb` 直接比 jsonb 值（不做文本抽取），键缺失与值为 null / 数字 / 数组都落到「不相等」而非 NULL。**本仓 JSONB 判等一律禁 `->>`**（本节首版误写作 `->>`，2026-09-26 就地订正为与已发布 `V1__catalog.sql` 一致的形式；`V1__catalog.sql` 与 `app/src/main/resources/db/migration/README.md` 注释里「spec §8.2 的写法」均指该首版——已应用脚本按纪律不原地编辑）。
 - **不加 GIN 索引**：v1 无按 doc 内容查询的需求；`listSpuIds()` 只需扫主键。
 - **不加来源平台列**：平台信息在 `doc` 内，加列即第二真相源。
 - **加 `created_at`**：成本为零，未来排查需要。
