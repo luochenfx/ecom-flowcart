@@ -4,7 +4,7 @@
 
 覆盖国内（1688 → 淘宝 / 拼多多）与跨境（1688 → 速卖通）两条链路：采集货源商品 → AI 内容生产 → 平台铺货 → 订单回传 1688 采购 → 物流追踪 → 看板 HITL。
 
-> **当前状态：实现期推进中（2026-09-25）**。设计期已收官（9 ADR + **7** Specs + 3 JSON Schema + 架构总览）；7 个 build slice（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)–[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)）已全部合入 main，各 slice 交付形态为「纯 Java 域服务 + Temporal 编排壳 + 单测」。**端到端链路已打通**（[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)，[#75](https://github.com/luochenfx/ecom-flowcart/issues/75) 收官，已合入 [PR #133](https://github.com/luochenfx/ecom-flowcart/pull/133)）：编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪 → 铺货收敛）+ 装配根（`adapter-host` / `api` / `app` Spring 装配）+ catalog 文档库落 Postgres 均已交付。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
+> **当前状态：实现期推进中（2026-09-25）**。设计期已收官（9 ADR + **7** Specs + 3 JSON Schema + 架构总览）；7 个 build slice（[#17](https://github.com/luochenfx/ecom-flowcart/issues/17)–[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)）已全部合入 main，各 slice 交付形态为「纯 Java 域服务 + Temporal 编排壳 + 单测」。**编排链装配已打通（基于 `adapter-fake` 测试 Adapter，非真实平台闭环）**（[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)，[#75](https://github.com/luochenfx/ecom-flowcart/issues/75) 收官，已合入 [PR #133](https://github.com/luochenfx/ecom-flowcart/pull/133)）：编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪 → 铺货收敛）+ 装配根（`adapter-host` / `api` / `app` Spring 装配）+ catalog 文档库落 Postgres 均已交付；**真实 1688 采集与真实淘宝上架尚未实现**（缺件清单与门禁判据见[规范 0012](docs/specs/0012-real-closed-loop-as-24-release-gate.md)）。进度追踪见 [map #1](https://github.com/luochenfx/ecom-flowcart/issues/1)。
 
 ---
 
@@ -73,7 +73,7 @@ git clone https://github.com/luochenfx/ecom-flowcart.git
 cd ecom-flowcart
 mvn clean test        # 全 reactor 单测 + in-process Temporal 测试（不需要 docker）
 docker compose up -d  # 拉起 postgres / rabbitmq / temporal / app
-mvn clean verify -Pe2e  # 端到端验收（需先 docker compose up -d；默认不进 CI）
+mvn clean verify -Pe2e  # 端到端验收（编排链装配口径，基于 adapter-fake 测试 Adapter；需先 docker compose up -d；默认不进 CI）
 ```
 
 | 服务 | 地址 | 说明 |
@@ -130,7 +130,8 @@ mvn clean verify -Pe2e  # 端到端验收（需先 docker compose up -d；默认
   - [x] `order`（[#22](https://github.com/luochenfx/ecom-flowcart/issues/22)，已合入 [PR #65](https://github.com/luochenfx/ecom-flowcart/pull/65)）：同步（轮询 + webhook 信号）→ 采购单 → 物流（order 27 + worker-runtime 21 tests）
   - [x] （[#23](https://github.com/luochenfx/ecom-flowcart/issues/23) 前置，非 slice）货源侧采购契约补齐（[#35](https://github.com/luochenfx/ecom-flowcart/issues/35)，已合入 [PR #38](https://github.com/luochenfx/ecom-flowcart/pull/38)）：`OfferSku.sourceSpecId` / `PurchaseDraftItem.sourceOfferId` / `PurchaseCapability.cancelPurchase` + `payPurchase`，并在 `specs/0005` 新增 §9.1 1688 侧逐项能力映射表
   - [x] 1688 Adapter 全能力收口 + Adapter 贡献门槛模板（[#23](https://github.com/luochenfx/ecom-flowcart/issues/23)，已合入 [PR #42](https://github.com/luochenfx/ecom-flowcart/pull/42)）：四段 Purchase（建单 / 取消 / 支付 / 物流）+ OAuth 换票 + 签名网关与限流 + 双向 fixture 门槛（契约前置 [#35](https://github.com/luochenfx/ecom-flowcart/issues/35) 已完成）；review 派生收口链 [#44](https://github.com/luochenfx/ecom-flowcart/issues/44)、[#45](https://github.com/luochenfx/ecom-flowcart/issues/45)、[#46](https://github.com/luochenfx/ecom-flowcart/issues/46) 均已收口（[PR #64](https://github.com/luochenfx/ecom-flowcart/pull/64) / [PR #63](https://github.com/luochenfx/ecom-flowcart/pull/63) / [PR #62](https://github.com/luochenfx/ecom-flowcart/pull/62)）
-- [x] **端到端链路打通**（[#75](https://github.com/luochenfx/ecom-flowcart/issues/75)，已合入 [PR #133](https://github.com/luochenfx/ecom-flowcart/pull/133)；[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)，2026-09-21 设计定稿）：编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪断言 → 铺货收敛）+ 装配根（`adapter-host.AdapterHost` / `api` REST 入口 / `app` Spring 装配）+ catalog 文档库落 Postgres + `adapter-fake` 测试 Adapter + e2e 验收
+- [x] **编排链装配打通**（[#75](https://github.com/luochenfx/ecom-flowcart/issues/75)，已合入 [PR #133](https://github.com/luochenfx/ecom-flowcart/pull/133)；[规范 0007](docs/specs/0007-end-to-end-flow-assembly.md)，2026-09-21 设计定稿）：编排链（`fulfillment-{spuId}-{channelId}` 以 child workflow 串联采集产物 → 内容就绪断言 → 铺货收敛）+ 装配根（`adapter-host.AdapterHost` / `api` REST 入口 / `app` Spring 装配）+ catalog 文档库落 Postgres + `adapter-fake` **测试 Adapter**（非真实平台闭环）+ e2e 验收
+- [ ] **真实闭环（1688 → 淘宝）**：对外发布段门禁（[规范 0012](docs/specs/0012-real-closed-loop-as-24-release-gate.md)）；前置 = 真实 1688 签名网关采集（新增 `Ali1688Api` offer 端点）+ 真实淘宝销售 Adapter（新 Maven 模块，`app/pom.xml` main scope）。**未达成前不得对外宣称端到端闭环**
 - [ ] 开源发布准备（[#24](https://github.com/luochenfx/ecom-flowcart/issues/24)：README 完善 / 示例数据 / 贡献指南）
 
 ## License
