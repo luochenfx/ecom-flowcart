@@ -100,6 +100,10 @@ _Avoid_: 已完成、就绪（须限定为"内容"轴；Listing 还有铺货轴�
 为打通链路而提供的**非生产**销售平台 Adapter：实现 `PublishCapability` 等销售侧能力，走与真实 Adapter 完全相同的 SPI 发现路径（`META-INF/services` + `ServiceLoader`），仅把端点换成可控实现（能返回 `AMBIGUOUS` 以覆盖挂起-裁定路径）。**不是 mock**——它走真实的 `adapter-host` 装配、真实的 `PublishService` 状态机，只替代"外部平台"这一个边界。落点 `adapter-fake` 模块，仅以 test scope 进 `app`（生产 artifact 绝不携带）。
 _Avoid_: fake adapter、stub、mock（本仓测试哲学是 hand-written fake 端点而非 mock 业务逻辑；"测试 Adapter" 特指走真 SPI 路径的测试用平台实现）
 
+**真实闭环（real closed loop）**:
+覆盖「真实货源平台采集 → 真实销售平台上架成功」的一次端到端运行，其外部平台为**真实平台**（非测试 Adapter）。与「链路装配（flow assembly）」相对——后者以测试 Adapter 替代外部平台边界，只验证编排与状态机。**「端到端」一词在本仓须加限定**：验装配时称「编排链装配」，验真实平台时称「真实闭环」。
+_Avoid_: 不加限定的「端到端链路已打通」（术语过载，见[规范 0012](docs/specs/0012-real-closed-loop-as-24-release-gate.md) §2）
+
 **链路坐标（flow identity）**:
 编排链与两条子链的确定性 id 同源于同一 Listing：编排链 `fulfillment-{spuId}-{channelId}`、内容链 `content-{listingId}`、铺货链 `listing-{spuId}-{channelId}`，三处推导必须口径一致（不一致即边界早失败，见 `PublishWorkflowInput` 构造器校验）。采集先于编排链发生，故 `spuId` 由 REST 入口同步采集后回填成 id。
 _Avoid_: 任务 id、job id（链路坐标是 Temporal 确定性 workflowId 的推导规则，非通用任务标识）

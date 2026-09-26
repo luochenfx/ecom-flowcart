@@ -66,6 +66,8 @@
 
 **编排链（listing flow）**：跨模块的**流程衔接**由父级 workflow 承担——`fulfillment-{spuId}-{channelId}` 以 **child workflow** 顺序串联「Listing 装配 → `content-{listingId}` → 内容就绪断言 → `listing-{spuId}-{channelId}`」，落在 `worker-runtime`。它只做调度与传参（零业务逻辑），是"业务模块间不直接调实现"在长链路场景下的承载形态。采集**不**进 workflow（同步调用，见规范 0007 §3）。细节见[规范 0007](./docs/specs/0007-end-to-end-flow-assembly.md)。
 
+**销售平台 Adapter 现状**：当前仓库**无任何真实销售平台 Adapter**——`adapter-1688` 的能力清单是 `{OfferFetch, Purchase, Auth}`（**不含 `PublishCapability`**）；铺货边界由 `adapter-fake` **测试 Adapter** 承担，且仅以 test scope 进 `app`（生产 artifact 绝不携带）。因此**生产态 `AdapterHost` 不提供任何 `PublishCapability`**。真实 1688 采集与真实淘宝上架均尚未实现，门禁判据见[规范 0012](./docs/specs/0012-real-closed-loop-as-24-release-gate.md)。
+
 ## 4. 依赖方向与禁环
 
 **单一规则：`core` ← 一切模块。** 模块之间只依赖接口（SPI），不依赖实现；`adapter-host` 与 `worker-runtime` 是仅有的两个 Composition Root（知道所有模块的地方），位于最外层。
