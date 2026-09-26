@@ -2,7 +2,7 @@
 
 > 来源：Grilling session（2026-09-21），议题「跑通从采集到铺货的全流程」
 > 依赖：[ADR-0002（Temporal）](../adr/0002-temporal-for-workflow-orchestration.md)、[ADR-0009（模块化单体 + 装配根）](../adr/0009-modular-monolith-and-deployment-view.md)、[规范 0001（铺货幂等）](./0001-listing-publish-idempotency.md)、[规范 0002（商品模型）](./0002-product-catalog-model.md)、[规范 0006（AI Step / 内容链）](./0006-ai-step-model.md)
-> 状态：v1 设计期决议（**实现期总纲**，衔接 #24 发布准备）
+> 状态：v1 设计期决议（**实现期总纲**，衔接 #24 发布准备）—— §10 九步已全部落地（#69–#75 合入 main，2026-09-25）
 > 范围声明：本规范**只解决"链路能跑通"**。以下问题明确**不在本规范范围**（见 §9）：消费并发受控、幂等与去重的进阶形态、失败分类与退避策略、背压与优先级。
 
 ## 1. 决策概览
