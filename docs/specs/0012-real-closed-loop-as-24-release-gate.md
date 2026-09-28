@@ -1,8 +1,9 @@
 # 规范 0012：1688→淘宝真实闭环作为 #24 发布门禁（两段式）
 
 > 来源：Grilling session（2026-09-27），议题「#24『发布准备』放行判据重定义」。决策记录：DR-closed-loop-gate-001（`.decisions/1688-to-taobao-closed-loop-gate-decision-log.md`）。
+> 改判来源：**#140**（DR-1688-channel-001，2026-09-28）——§5(a) 由「严基线」改判为「通道无关的真实采集证据」；原文存 §12 修订记录。
 > 依赖：[ADR-0003（铺货幂等）](../adr/0003-listing-idempotency-via-deterministic-workflow-id.md)、[ADR-0007（Adapter 插件契约）](../adr/0007-adapter-plugin-contract.md)、[规范 0001（铺货幂等）](./0001-listing-publish-idempotency.md)、[规范 0005（Adapter 契约）](./0005-adapter-plugin-contract.md)、[规范 0007（端到端链路装配）](./0007-end-to-end-flow-assembly.md)。
-> 状态：v1 决议。**本规范定义门禁判据，不承诺实现**——真实淘宝销售 Adapter 与 1688 签名网关 offer 端点**均尚未实现**（缺件见 §3.3，逐条显式标注）。
+> 状态：**v1.1 决议**（2026-09-28：§5(a) 经 #140 / DR-1688-channel-001 改判为「通道无关的真实采集证据」，原严基线全文存 §12 修订记录）。**本规范定义门禁判据，不承诺实现**——真实淘宝销售 Adapter 与 1688 签名网关 offer 端点**均尚未实现**（缺件见 §3.3，逐条显式标注）。
 > 范围声明：本规范只解决「#24 何时可开启 / 何时可对外宣称真实闭环」。**不**解决真实平台接入的工程实现（那属对外段 §5 前置的两条链）。
 
 ## 1. 决策概览
@@ -10,7 +11,7 @@
 - **门禁改为两段式（候选 d）**：#24 拆为「**内部准备段**」与「**对外发布段**」。内部准备段**立即放行**，判据 = README 描述不得超前于实际能力；对外发布段（即"对外宣称端到端/真实闭环已打通"）**须真实闭环证据包**方可开启。
 - **真实闭环的内核完整保留**：候选 b 的内核「真实闭环 = 对外发布硬前提」**完整并入** d 的对外段；被否决的只是「冻结整张 #24」这一形态。
 - **内部准备段不依赖资质**：其判据全部落在文档措辞与元数据清理，**不依赖 Q1/Q2（淘宝/1688 资质）**。
-- **对外发布段前置 = 两条未落地的链**：① 1688 采集接 **param2 签名网关**（向 `Ali1688Api` 新增 offer 端点 + appKey/appSecret/access_token）；② **真实淘宝销售 Adapter**（新 Maven 模块，`app/pom.xml` main scope 引入）。二者**当前均不存在**。
+- **对外发布段前置 = 两条链**：① **真实采集（通道无关**，判据见 §5(a)；本仓选定 **D 通道「人工导出 → catalog 导入」**）；② **真实淘宝销售 Adapter**（新 Maven 模块，`app/pom.xml` main scope 引入）。① 已由 **#140** 改判为通道无关（原「param2 签名网关」严基线不再必须）；② **当前不存在**。
 - **契约层零改动（关键结论）**：「上架成功」的充分且唯一标志**已存在**——`PublishCapability.add(Listing) → PublishResult.platformItemId`（`core-contracts/.../PublishCapability.java:20`），`PublishService.recordAddOutcome`（`publish/.../PublishService.java:192-199`）在 `add()` **同步成功返回**时即落 `PublishStatus.PUBLISHED`。**缺失的是"可达层"（真实淘宝 Adapter 实现），不是"信号定义"** ⇒ 不触发 `AGENTS.md` 的 core 契约变更闸门。
 - **降级备选（候选 c）常备**：对外段长期不可达时，退为「分级门禁 + 显式声明真实闭环未验证」，见 §6。
 - **候选 a（维持现状 `Blocked by #22/#23`）淘汰**：#22/#23 均已 **CLOSED**，门禁链接 stale 且实际失效（§10 证据 E6）。
@@ -42,9 +43,8 @@
 
 对外发布 = 任何"宣称端到端/真实闭环已打通"的对外动作（发布公告、Roadmap 打勾、README 恢复无保留表述等）。**过判据 = (a)+(b) 两证据齐**：
 
-- **(a) 严基线：经 1688 官方 param2 签名网关采集成功**
-  - 落地要件：向 `Ali1688Api` 枚举**新增 offer 端点**（当前仅 4 个 trade/logistics 端点，`Ali1688Api.java:12-34`）+ appKey/appSecret/access_token + `_aop_signature`（算法已在 `Ali1688Signature.java:12-32,57-68` 落地，复用即可）。
-  - 证据 = 外部调用日志（含签名因子）+ `catalog_product` 表存在该 SPU 行。
+- **(a) 真实采集证据（通道无关）** —— 详判据见 §5(a)。原「严基线：经 1688 官方 param2 签名网关采集成功」经 **#140**（DR-1688-channel-001，真人授权「放宽」）**改判**为通道无关；**「含签名因子」不再是必要条件**。
+  - 证据 = 见 §5(a) 判据 1–3；`catalog_product` 表存在该 SPU 行（`PostgresCatalogStore`，见规范 0007 §8）。
 - **(b) 仅同步信号：真实淘宝 Adapter 的 `add()` 同步返回真实 platform_item_id**
   - 落地要件：**真实淘宝销售 Adapter 实现**（当前不存在）。
   - 证据 = `PublishStateStore` 该 listingId 落 `PublishStatus.PUBLISHED`（`PublishService.java:192-199`）+ platform_item_id 非空。
@@ -58,6 +58,8 @@
 | 3 | 1688 采集未接签名网关 | `Ali1688OfferFetch.java:20-24,48-64`（POST `source_ref.url`，无签名/无凭据）；`Ali1688Api.java:12-34` 无 offer 端点 | 对外段 |
 | 4 | 无真实平台凭据 | `.env.example:1-19` 仅 postgres/rabbitmq/媒体根/备份，无 1688/淘宝项 | 对外段 |
 | 5 | 内容链真实 LLM 端点未接入 | e2e 用 WireMock 固定端口 stub（`FlowAssemblyE2EIT.java:110-115`）；生产靠 `FLOWCART_LLM_BASE_URL` 配置（`未复算` 生产注入全路径） | 对外段 |
+
+> **v1.1 注（#140 改判连带）**：上表**第 3 项**（1688 采集未接签名网关）在 (a) 改判后**不再是 (a) 判据的缺件**——官方签名网关已降为「可选通道」，非必要条件；其原请求票 `#136` 已关停。第 1 / 2 / 4 / 5 项仍为对外段缺件。
 
 ## 4. 内部准备段（放行判据 · 细化）
 
@@ -84,10 +86,16 @@
 
 **开启条件**：内部准备段判据 I-1/I-2/I-3 已满足 **且** 下列证据包 **(a)+(b) 齐备**。
 
-- **(a) 真实 1688 采集（严基线）**
-  - 必需：`Ali1688Api` 新增 offer 端点（param2 命名空间 + 接口名）+ 系统参数 `appKey`/`appSecret`/`access_token`/`_aop_timestamp` + `_aop_signature`。
-  - 判据：一次真实调用成功，产出一份含**签名因子**的外部调用日志；且 `catalog_product` 表存在对应 SPU 行（`PostgresCatalogStore`，见规范 0007 §8）。
-  - 当前状态：**未实现**（`Ali1688Api.java:12-34` 无 offer 端点；`Ali1688OfferFetch.java:20-24` 仅 `source_ref.url` 直连）。
+- **(a) 真实采集证据（通道无关）**
+  - 必需：一次「**真实采集**」成功——采集通道**不限**（官方 param2 签名网关 / 第三方数据服务 / 自建采集 / 人工导出 均可），但产出必须是**真实平台商品数据**，**不得**为测试 Adapter / fixture / seed。
+  - 判据（三条**同时**满足）：
+    1. **落库事实**：`catalog_product` 表存在该 SPU 行（`PostgresCatalogStore`，见规范 0007 §8），且字段源自真实平台数据（非占位值）。
+    2. **采集凭证（按通道二选一）**：
+       - 程序化通道（官方签名网关 / 第三方数据服务 / 自建采集）→ **外部调用日志**（请求/响应摘要，凭据脱敏）；
+       - 人工 / 半自动通道（ERP 或商家后台导出）→ **导出文件 + 导入步骤日志 + 数据溯源说明**。
+    3. **可复现**：记录操作步骤与数据来源；凭据不入仓（沿用 `.env` / 环境变量注入）。
+  - **改判依据**：**#140**（DR-1688-channel-001，2026-09-28）；真人授权「(a) 放宽」。原「严基线 = 官方 param2 签名网关 + 含签名因子」**不再是必要条件**（原文存 §12 修订记录）。
+  - 当前状态：本仓**选定 D 通道（人工导出 → catalog 导入）可达**；其他通道非本 spec 承诺项（C 通道因合规判读未决**暂缓**，见 §7 `U-B3'`）。
 - **(b) 真实淘宝上架（仅同步信号）**
   - 必需：真实淘宝销售 Adapter（新 Maven 模块，实现 `PublishCapability`，`platform` = 淘宝；`app/pom.xml` 以 main scope 引入）。
   - 判据：`add()` **同步返回**非空真实 platform_item_id → `PublishStateStore` 该 listingId 落 `PublishStatus.PUBLISHED`。
@@ -113,7 +121,7 @@
 | 编号 | 原状 | 处置 | 说明 |
 |---|---|---|---|
 | U1 | Q1 命题边界 | **关闭** | 已由候选 d 定案（门禁重定义 + 范围隔离到对外段） |
-| U3 | Q3 真实采集基线 | **关闭** | 已定为严基线（param2 签名网关） |
+| U3 | Q3 真实采集基线 | **重开 → 改判** | **#140** / DR-1688-channel-001（Rev.3）依真人授权，把 (a) 由「严基线（param2 签名网关 + 签名因子）」**改判为通道无关真实采集证据**（§5(a)）。 |
 | U4 | Q4 上架成功信号 | **关闭** | 已定为仅同步信号（`add()` 返回 platform_item_id） |
 | U2 | Q2 淘宝资质 | **转态** | 本 spec 范围内 **non-blocking**；对外段落地时 **blocking**（不可得 → 退 c）。登记：待调研「淘宝开放平台商品发布类 API / 卖家电子面单通道」获取路径与成本，及"新增 1688 签名网关 offer 端点 + 真实淘宝 Adapter"两条链工程量。**本节不构成新 need_human** |
 | U5 | `README.md:7` 措辞 | **升级** | → 内部准备段交付项（判据 I-1） |
@@ -121,11 +129,14 @@
 | U7 | e2e 命令 | **保留** | 随对外段另建"真闭环"验收命令；现 e2e（`FlowAssemblyE2EIT.java:110-115`）不动 |
 | U8 | 真实 LLM 端点 | **保留** | `.env.example` 无凭据入口 |
 | U9 | 生产态销售 Adapter 交付路径 | **保留** | 新增 Maven 模块 + `app/pom.xml` main scope |
+| U10 | (a) 改判的核验性代价 | **保留** | 通道无关化后 (a) **防伪强度下降**——D 通道凭证（导出文件 + 人工步骤日志）**天然可事后补造**；登记为**残余语义边界**。 |
+| U-B3' | 合规判读歧义 | **保留（non-blocking）** | 真人「暂不考虑底线」**未设合规否决**；判读为 `assumed`，**未据此启用 C**；C 暂缓。 |
+| U-B1' | 主体类别 | **保留** | 真人实测：官方 ISV **对个人不可达**、企业亦须明细资质清单 + 已存在项目（时效性高于官方旧页 `appJoin.htm`）。 |
 
 ## 8. Out of Scope（明确不做）
 
 - **在售校验（审核/前台可见性）**：本决策**明示豁免**——"上架成功"以 `add()` 同步返回 platform_item_id 为充分且唯一标志，**不做**平台侧异步审核/在售二次确认（§5 残余语义边界）。
-- **真实平台接入的工程实现**：新增 1688 offer 端点、真实淘宝 Adapter 实现、真实凭据接入、真实 LLM 端点接入——**不在本 spec**（归对外段前置的两条链，另行立项）。
+- **真实平台接入的工程实现**：新增 1688 offer 端点（**v1.1 注**：随 #140 改判**降为可选**，不再是 (a) 前置；其原请求票 `#136` 已关停）、真实淘宝 Adapter 实现、真实凭据接入、真实 LLM 端点接入——**不在本 spec**（归对外段前置的两条链，另行立项）。
 - **#22/#23 的既有交付形态**：不追溯、不改写。
 
 ## 9. Testing Decisions
@@ -140,16 +151,58 @@
 |---|---|---|---|
 | E1 | 无真实销售平台 Adapter | `pom.xml:39-50`；`docs/specs/0007:342`；`grep Taobao --include=*.java` 仅注释 | 已复算 |
 | E2 | 生产 classpath 无 Publish 能力 | `app/pom.xml:78-82,86-91`（adapter-fake = test scope） | 已复算 |
-| E3 | 1688 采集未接签名网关 | `Ali1688OfferFetch.java:20-24,48-64`；`Ali1688Api.java:12-34`；`Ali1688Signature.java:12-32,57-68`（算法已就绪） | 已复算 |
+| E3 | 1688 采集未接签名网关 | `Ali1688OfferFetch.java:20-24,48-64`；`Ali1688Api.java:12-34`；`Ali1688Signature.java:12-32,57-68`（算法已就绪） | 已复算（**改判后仅适用于「走官方通道」时的可选实现路径**，不再是 (a) 判据前置） |
 | E4 | 无真实平台凭据 | `.env.example:1-19` | 已复算 |
 | E5 | 「上架成功」信号已存在 | `PublishCapability.java:20`；`PublishService.java:192-199`；`PublishStatus.java:17-26`；`PublishDisposition.java:12-38` | 已复算 |
 | E6 | #22/#23 均 CLOSED、#24 门禁 stale | `gh issue view 22`（CLOSED）、`gh issue view 23`（CLOSED）、`gh issue view 24`（blocked-by 仍列 #22/#23） | 已复算 |
 | E7 | README 超前宣称 | `README.md:7`；`README.md:133`（另见 `README.md:76`「端到端验收」命令注释，同型漂移） | 已复算 |
 | E8 | e2e 用测试 Adapter + WireMock | `FlowAssemblyE2EIT.java:110-115,212,285-288`；`specs/0007:344-352,370` | 已复算 |
 | E9 | 淘宝个人受限 | map #1 正文索引 research #2（原文落 `research/` branch，**未复算原文**） | **未复算** |
+| E10 | 官方 ISV 审核加严：非「企业资质即可用」，须明细资质清单 + 已存在项目；个人不可达 | 真人实测陈述（2026-09-28，Q-A） | **真人实测**（非仓库复算） |
+| E11 | (a) 改判为通道无关真实采集证据 + 选定 D 通道 | **#140**（DR-1688-channel-001 Rev.3） | 已复算 |
 
 ## 11. 连带项（本 spec 落地附带的文档消歧）
 
 - `CONTEXT.md` 新增术语条目「**真实闭环（real closed loop）**」，与既有「测试 Adapter」条目（`CONTEXT.md:99-101`）配套，消解"端到端"过载（§2 根因）。
 - `docs/architecture.md` §3 增补「销售平台 Adapter 现状」标注（无真实销售 Adapter / 生产态无 `PublishCapability`）。
+- **(v1.1 新增)** 本 spec 的 (a) 改判（通道无关）须同步 `#24` 对外段定义与 `README.md` 的「真实闭环」Roadmap 行；并按 §6 保持「对外发布段默认关闭」——(a) 放宽**降低 §6 触发概率**，但 **§6 文本不改**。
 - `README.md`：状态段（`:7`）、Roadmap（`:133`）与 e2e 命令注释（`:76`）三处"端到端"口径统一加限定。
+
+## 12. 修订记录
+
+### v1.1（2026-09-28）· #140 / DR-1688-channel-001（Rev.3）
+
+**改判**：§5(a) 由「严基线：经 1688 官方 param2 签名网关采集（含签名因子）」→ **「通道无关的真实采集证据」**。
+
+**依据（证据 E10）**：
+
+- 1688 官方开放平台创建应用入口已收紧——**不是「有企业资质即可用」**，须提交**更明细的资质清单**，且**必须具备「已存在的项目」**方可申请；**个人无法跑通闭环**（真人实测）。
+- 网络公开资料（含官方页 `open.1688.com/doc/appJoin.htm`）为**旧版口径**：页面原文属实，但**已非现行审核口径**——属**时效差**，非逻辑矛盾。
+- ⇒ 原严基线对本项目主体**结构性不可达**；据此**关停 `#136`**（Build：param2 签名网关 offer 端点），理由见该票关停评论。
+
+**采集通道裁定**：选定 **D（半自动人工导出 → catalog 导入）**；A（借道服务商 appKey）/ B（第三方聚合 API）因**初期成本上限 = 0** 排除；C（自建抓取）因**合规判读歧义**暂缓；E（退 §6 迁移规则 c）保留为 fallback。§6 文本**原样保留**。
+
+**契约层**：零改动（改判为纯文档；D 复用 `CatalogStore.put(...)` 既有签名 ⇒ **不触发** `AGENTS.md` 契约变更闸门）。
+**caveat**：若为「通道无关采集证据」**新开 core 载体**（新 contract 类型 / 新 `SourceRef` 变体 / 新 Capability）⇒ 须**先另立 Spec 票**，先 Spec 后 Build。
+**表结构变更：无。Flyway 脚本：无。数据清理范围：无。**
+
+**原文存档（v1.0 §5(a)，2026-09-27 版）**：
+
+```markdown
+- **(a) 真实 1688 采集（严基线）**
+  - 必需：`Ali1688Api` 新增 offer 端点（param2 命名空间 + 接口名）+ 系统参数 `appKey`/`appSecret`/`access_token`/`_aop_timestamp` + `_aop_signature`。
+  - 判据：一次真实调用成功，产出一份含**签名因子**的外部调用日志；且 `catalog_product` 表存在对应 SPU 行（`PostgresCatalogStore`，见规范 0007 §8）。
+  - 当前状态：**未实现**（`Ali1688Api.java:12-34` 无 offer 端点；`Ali1688OfferFetch.java:20-24` 仅 `source_ref.url` 直连）。
+```
+
+**原文存档（v1.0 §3.2 (a)，2026-09-27 版）**：
+
+```markdown
+- **(a) 严基线：经 1688 官方 param2 签名网关采集成功**
+  - 落地要件：向 `Ali1688Api` 枚举**新增 offer 端点**（当前仅 4 个 trade/logistics 端点，`Ali1688Api.java:12-34`）+ appKey/appSecret/access_token + `_aop_signature`（算法已在 `Ali1688Signature.java:12-32,57-68` 落地，复用即可）。
+  - 证据 = 外部调用日志（含签名因子）+ `catalog_product` 表存在该 SPU 行。
+```
+
+**连带改动**：头部 `:3` / `:5`；§1 bullet；§3.2 (a)；**§5(a)（核心）**；§3.3 表下 v1.1 注；§7 `U3` + 新增 `U10` / `U-B3'` / `U-B1'`；§8（「新增 1688 offer 端点」标注降为可选）；§10 `E3` 补注 + 新增 `E10` / `E11`；§11。
+
+**遗留（non-blocking）**：`U10`（(a) 防伪强度下降——D 通道凭证可事后补造）、`U-B3'`（合规判读歧义）、`U-B1'`（主体类别）、`U-N2`（第三方一手报价 / 协议原文）；`#138` 的 `blocked_by #136` 依赖边待按新口径处置（验收项改为「导出文件 + 导入日志」）。
